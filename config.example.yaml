@@ -74,6 +74,9 @@ session:
   # 로그아웃이 확실한 응답이 연속 이 횟수만큼 나와야 만료로 본다. 네트워크가
   # 한 번 튄 것을 만료로 오판하면 그동안 예매 시도까지 멈춘다.
   confirm_times: 2
+  # 만료로 판정되면 사람을 부르기 전에 스스로 토큰을 되살려 본다.
+  # (refresh 엔드포인트 -> 페이지 리로드 순서. 비밀번호는 입력하지 않는다.)
+  auto_renew: true
 
 notify:
   # 실제 URL은 .env 의 DISCORD_WEBHOOK_URL 에 넣으세요.

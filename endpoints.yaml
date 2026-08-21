@@ -22,9 +22,24 @@ roles:
     url: "{web_origin}/api/v1/member/cust/info/searchMktRcvIagrYn"
 
   # 유휴 만료를 늦추려고 주기적으로 건드리는 인증 엔드포인트.
+  # [주의] 이건 읽기 전용이라 토큰을 갱신시키지 못한다. 아래 session_refresh 를
+  # 찾으면 이 역할도 그쪽 URL로 바꾸는 편이 낫다. 그러면 만료 자체가 안 생긴다.
   session_keepalive:
     method: GET
     url: "{web_origin}/api/v1/member/cust/info/searchMktRcvIagrYn"
+
+  # accessToken 재발급. 있으면 SessionRenewer가 1단으로 쓰고, 없으면 조용히
+  # 건너뛰고 페이지 리로드(2단)로 넘어간다. 아직 실제 URL을 못 잡았다.
+  #
+  # CGV는 수명 짧은 accessToken과 1년짜리 refresh_token을 쿠키로 들고 다니며,
+  # SPA가 만료 전에 조용히 재발급받는다. 그 요청을 잡으면 여기에 적는다.
+  # 잡는 법: 봇이 붙어 있는 Chrome 탭의 DevTools > Network 를 열어두고
+  # accessToken 쿠키가 새로 생기는 순간의 요청을 본다. Set-Cookie 로
+  # accessToken 을 돌려주는 그 호출이다.
+  #
+  # session_refresh:
+  #   method: POST
+  #   url: "{web_origin}/api/v1/..."
 
   # 좌석 단위 상태. 상영시간표의 frSeatCnt 는 장애인석까지 세기 때문에
   # "몇 석 남았다"는 숫자만 보면 잡을 수 없는 자리에 계속 달려들게 된다.

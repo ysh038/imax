@@ -31,6 +31,7 @@ class SessionGuard:
         renotify_every_sec: float = 1800.0,
         confirm_times: int = 2,
         confirm_delay_sec: float = 5.0,
+        renewer=None,
     ):
         self.api = api
         self.notify = notifier
@@ -43,6 +44,8 @@ class SessionGuard:
         # 첫 부정이 나오면 확인 주기를 기다리지 않고 곧 다시 본다. 진짜로
         # 끊긴 경우에 확인을 두 번 요구하느라 감지가 늦어지면 안 된다.
         self.confirm_delay = confirm_delay_sec
+        # 사람을 부르기 전에 스스로 토큰을 되살려 보는 사다리. None이면 안 쓴다.
+        self.renewer = renewer
 
         self.logged_in = True
         self.expired_since = 0.0
@@ -74,12 +77,35 @@ class SessionGuard:
                 print(f"  [세션] keepalive 실패, login_check로 대체합니다: {exc}")
         self.api.is_logged_in()
 
+    def _renew(self) -> bool:
+        """사람을 부르기 전에 스스로 되살려 본다.
+
+        대부분은 로그인이 풀린 게 아니라 accessToken이 잠깐 빈 것이다.
+        renew.SessionRenewer 참고.
+        """
+        if self.renewer is None:
+            return False
+        try:
+            how = self.renewer.renew()
+        except QueueWaitError:
+            raise
+        except Exception as exc:  # 갱신하다 죽어서 감시까지 멈추면 안 된다
+            print(f"  [갱신] 예기치 못한 실패: {exc}")
+            return False
+        if not how:
+            return False
+        # 이미 만료를 알린 뒤라면 곧바로 _on_restored 가 '복구됨'을 보낸다.
+        # 둘 다 보내면 같은 사건으로 디스코드가 두 번 울린다.
+        if self.logged_in:
+            self.notify.session_renewed(how)
+        return True
+
     def _on_expired(self) -> None:
         self.logged_in = False
         self._negatives = 0
         self.expired_since = time.time()
         self._last_alert = time.time()
-        self.notify.session_expired()
+        self.notify.session_expired(tried_renew=self.renewer is not None)
 
     def _on_restored(self) -> None:
         down = time.time() - self.expired_since if self.expired_since else 0.0
@@ -127,8 +153,12 @@ class SessionGuard:
                 if self.logged_in and self._negatives < self.confirm_times:
                     # 아직 확신이 없다. 다음 확인을 앞당긴다.
                     self._last_check = now - max(0.0, self.check_every - self.confirm_delay)
+                elif self._renew():
+                    # 스스로 살려냈다. 사람을 부를 일이 아니다.
+                    state = True
+                    self._negatives = 0
 
-            if self.logged_in and self._negatives >= self.confirm_times:
+            if self.logged_in and not state and self._negatives >= self.confirm_times:
                 self._on_expired()
             elif not self.logged_in and state:
                 self._on_restored()

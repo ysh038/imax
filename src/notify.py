@@ -169,15 +169,27 @@ class Notifier:
                 fields=[("대기", f"{wait_sec:.0f}초")],
             )
 
-    def session_expired(self, down_sec: float = 0.0) -> None:
+    def session_expired(self, down_sec: float = 0.0, tried_renew: bool = False) -> None:
         since = f"\n끊긴 지 {down_sec / 60:.0f}분 지났습니다." if down_sec else ""
+        # 자동 갱신까지 실패했다면 토큰만 빈 게 아니라 진짜로 로그인이 필요한
+        # 상태다. 사람이 어디까지 해야 하는지 알려주는 편이 낫다.
+        tried = "\n자동 갱신을 시도했지만 실패했습니다. 직접 로그인해야 합니다." if tried_renew else ""
         self._log(f"[세션 만료] CGV 로그인이 풀렸습니다.{since}")
         self.send(
             "CGV 로그인 세션 만료",
             "감시는 계속하지만 지금은 예매를 할 수 없습니다.\n"
-            f"열려 있는 Chrome 창에서 다시 로그인해 주세요.{since}",
+            f"열려 있는 Chrome 창에서 다시 로그인해 주세요.{tried}{since}",
             COLOR_BAD,
             mention=True,
+        )
+
+    def session_renewed(self, how: str) -> None:
+        """사람 손 없이 되살아난 경우. 알림은 남기되 호출하지는 않는다."""
+        self._log(f"[세션 갱신] {how}(으)로 로그인을 되살렸습니다.")
+        self.send(
+            "로그인 자동 갱신됨",
+            f"세션이 잠깐 끊겼지만 {how}(으)로 되살렸습니다. 예매 시도를 계속합니다.",
+            COLOR_GOOD,
         )
 
     def session_restored(self, down_sec: float = 0.0) -> None:

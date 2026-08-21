@@ -21,6 +21,7 @@ from selenium.common.exceptions import WebDriverException
 from src import browser, cgv, config
 from src.booker import Booker, BookingError, BookingResult, NoSelectableSeats
 from src.notify import Notifier
+from src.renew import SessionRenewer
 from src.session import SessionGuard
 from src.watcher import Watcher
 
@@ -137,6 +138,7 @@ def main() -> int:
         keepalive_every_sec=cfg.session.keepalive_every_sec or float("inf"),
         renotify_every_sec=cfg.session.renotify_every_sec,
         confirm_times=cfg.session.confirm_times,
+        renewer=SessionRenewer(api, browser.CGV_HOME) if cfg.session.auto_renew else None,
     )
     watcher = Watcher(api, cfg, notifier, session_guard=guard)
 
@@ -149,7 +151,9 @@ def main() -> int:
         f"{'·'.join(cfg.theater.screen_keywords)}\n"
         f"{cfg.date_from} ~ {cfg.date_to}, {cfg.seats.count}석\n"
         f"동작: {mode} / 확인 주기 {lo:.0f}~{hi:.0f}초\n"
-        f"로그인 세션도 {cfg.session.check_every_sec:.0f}초마다 확인해서 끊기면 알립니다."
+        f"로그인 세션도 {cfg.session.check_every_sec:.0f}초마다 확인합니다"
+        + (", 끊기면 스스로 갱신해 보고 안 되면 알립니다." if cfg.session.auto_renew
+           else ", 끊기면 알립니다.")
     )
 
     successes = 0
