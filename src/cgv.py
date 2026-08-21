@@ -34,6 +34,10 @@ class CgvError(RuntimeError):
     pass
 
 
+class QueueWaitError(CgvError):
+    """API 응답이 대기열 페이지다. 호출자는 잠시 쉬고 다시 보면 된다."""
+
+
 class BlockedError(CgvError):
     """Cloudflare 차단 또는 레이트리밋. 호출자가 백오프해야 한다."""
 
@@ -219,6 +223,9 @@ class CgvApi:
 
         if status in (403, 429) or "이용이 제한되었어요" in text:
             raise BlockedError(f"차단 감지 (HTTP {status}) {url}")
+        lowered = text.lower()
+        if any(m in lowered for m in ("netfunnel", "nfplus", "접속 대기", "접속대기", "대기열")):
+            raise QueueWaitError(f"접속 대기열 응답 (HTTP {status}) {url}")
         if status == 0:
             raise CgvError(f"네트워크 실패: {text[:200]}")
         if status >= 500:
@@ -231,6 +238,8 @@ class CgvApi:
         try:
             payload = json.loads(res["text"])
         except ValueError:
+            if any(m in res["text"].lower() for m in ("netfunnel", "nfplus", "접속대기", "대기열")):
+                raise QueueWaitError(f"{role}: 대기열 HTML 응답") from None
             raise CgvError(f"{role}: JSON이 아닌 응답 (HTTP {res['status']})") from None
 
         code = payload.get("statusCode")
@@ -251,6 +260,8 @@ class CgvApi:
         except ApiStatusError as exc:
             if exc.needs_login:
                 return False
+            raise
+        except QueueWaitError:
             raise
         except CgvError:
             return False

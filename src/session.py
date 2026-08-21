@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import time
 
-from .cgv import ApiStatusError, BlockedError, CgvError
+from .cgv import ApiStatusError, BlockedError, CgvError, QueueWaitError
 
 
 class SessionGuard:
@@ -49,11 +49,12 @@ class SessionGuard:
             except BlockedError:
                 raise
             except ApiStatusError as exc:
-                # 401은 엔드포인트가 멀쩡하고 세션만 끊긴 것이다. 다음 확인에서 잡힌다.
                 if exc.needs_login:
                     return
                 self._keepalive_broken = True
                 print(f"  [세션] keepalive 엔드포인트가 바뀐 듯합니다. login_check로 대체: {exc}")
+            except QueueWaitError:
+                raise
             except CgvError as exc:
                 self._keepalive_broken = True
                 print(f"  [세션] keepalive 실패, login_check로 대체합니다: {exc}")
@@ -92,6 +93,8 @@ class SessionGuard:
                 state = self.api.is_logged_in()
             except BlockedError:
                 return self.logged_in  # 차단은 감시 루프가 따로 처리한다
+            except QueueWaitError:
+                raise
             except CgvError:
                 return self.logged_in
 
@@ -108,6 +111,8 @@ class SessionGuard:
             self._last_keepalive = now
             try:
                 self._keepalive()
+            except QueueWaitError:
+                raise
             except CgvError:
                 pass
 

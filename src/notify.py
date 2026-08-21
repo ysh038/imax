@@ -185,6 +185,21 @@ class Notifier:
         self._log(f"[세션 복구] {text}")
         self.send("로그인 복구됨", f"예매 시도를 다시 시작합니다. {text}", COLOR_GOOD)
 
+    def queue_entered(self, image=None) -> None:
+        self._log("[대기열] 접속 대기 화면이 떴습니다. 기다립니다.")
+        self.send(
+            "접속 대기열에 들어갔습니다",
+            "예매 오픈 대기열로 보입니다. 화면을 새로고침하지 않고 기다립니다.\n"
+            "대기가 끝나면 예매를 이어서 진행합니다.",
+            COLOR_WARN,
+            image=image,
+            mention=True,
+        )
+
+    def queue_cleared(self, waited: float) -> None:
+        self._log(f"[대기열] 통과 ({waited:.0f}초)")
+        self.send("대기열 통과", f"{waited:.0f}초 만에 빠졌습니다. 예매를 이어서 진행합니다.", COLOR_GOOD)
+
     def heartbeat(self, text: str) -> None:
         self._log(f"[생존] {text}")
         self.send("감시 중", text, COLOR_INFO)

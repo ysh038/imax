@@ -25,6 +25,7 @@ src/browser.py   전용 프로필 Chrome 실행 + CDP attach + 로그인 대기
 src/cgv.py       API 클라이언트 (페이지 컨텍스트 fetch)
 src/watcher.py   취소표 감시 + 오픈 대기 통합 루프
 src/booker.py    회차 진입 -> 인원 -> 좌석 -> 결제
+src/queue.py     오픈 대기열(넷퍼넬 등) 감지 후 통과까지 대기
 src/notify.py    디스코드 웹후크
 src/recorder.py  API 녹화기 (CGV가 바뀌었을 때 재조사용)
 endpoints.yaml   확인된 API 목록
@@ -77,11 +78,14 @@ Entering Sleep 이 있으면 봇도 멈춘것
 | `theater.screen_keywords` | 상영관명·특별관등급·포맷 중 하나라도 포함해야 하는 단어 |
 | `movie.title_contains` | 영화 제목 부분 일치 |
 | `showtimes.after` / `before` | CGV 표기 그대로. 심야는 24시를 넘어간다 (`25:30` = 새벽 1시 반) |
+| `showtimes.days` | 볼 요일. `fri, sat, sun` 이면 주말만 |
+| `showtimes.friday_after` | 금요일은 이 시각 이후만 (예: `21:00`). 토·일에는 적용 안 됨 |
 | `seats.prefer_rows` | 앞에 적은 행부터 우선 |
 | `polling.interval_sec` | `[하한, 상한]` 사이 랜덤. 1초 미만은 설정 단계에서 막는다 |
 | `polling.burst_at` | 예매 오픈 시각을 알 때 그 시점만 빠르게 |
 | `booking.pay_method` | CGV 결제 화면의 결제수단 이름 그대로 (`카카오페이`, `toss`, `CJ PAY` 등) |
 | `booking.max_price_krw` | 총액이 넘으면 결제하지 않고 알림 |
+| `booking.queue_timeout_sec` | 오픈 대기열을 기다릴 상한(초). 좌석 선점 시간과 별개 |
 
 ## 결제는 토스로 한다
 
@@ -169,5 +173,8 @@ Chrome이 뜨면 예매 흐름을 수동으로 한 번 걸어간다. 종료하�
 
 - 예매·결제는 로그인 세션에서 일어난다. 브라우저 창을 닫으면 봇도 멈춘다.
 - 맥이 절전에 들어가면 감시가 끊긴다. `caffeinate -dimsu`로 감싸서 실행할 것.
+- 새 주가 열릴 때 접속 대기열(넷퍼넬 등)이 뜨면 새로고침하지 않고 기다린다.
+  대기가 풀리면 예매를 이어가고, 제한 시간(`queue_timeout_sec`, 기본 30분)이
+  지나면 실패로 보고 감시로 돌아간다.
 - `.env`, `config.yaml`, `.chrome-profile/`은 `.gitignore`에 들어 있다. 세션 쿠키와
   결제 비밀번호가 들어 있으니 실수로 커밋하지 말 것.

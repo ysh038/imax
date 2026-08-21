@@ -21,6 +21,9 @@ showtimes:
   # CGV 표기 그대로. 심야는 24시를 넘어간다 (25:30 = 새벽 1시 30분).
   after: "00:00"
   before: "28:00"
+  # 이 요일만 본다. 비우면 모든 요일.
+  days: [fri, sat, sun]
+  friday_after: "21:00"    # 금요일은 이 시각 이후만. 토·일은 after/before 그대로.
   weekdays_only: false
   # 이 회차들만 노린다. 비워두면 조건에 맞는 전부.
   only_dates: []
@@ -60,6 +63,7 @@ booking:
   max_price_krw: 100000    # 총 결제금액이 이보다 크면 중단
   max_bookings: 1          # 성공 횟수가 이 값에 닿으면 프로그램 종료
   hold_timeout_sec: 540    # 좌석 선점 유지시간(약 10분) 안쪽으로 잡는다
+  queue_timeout_sec: 1800  # 오픈 대기열(넷퍼넬 등)을 기다릴 상한. 선점 시간과 별개.
 
 session:
   # 상영시간표 조회는 비로그인으로도 되기 때문에, 세션이 끊겨도 봇은 멀쩡히 도는 것처럼

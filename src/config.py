@@ -24,6 +24,26 @@ def _minutes(value: str) -> int:
         raise ConfigError(f"시각 형식이 잘못됐습니다: {value!r} (예: '18:00', '27:30')") from None
 
 
+_DAY_INDEX = {
+    "mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6,
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+    "월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6,
+}
+
+
+def _days(values) -> list[int]:
+    if not values:
+        return []
+    out = []
+    for raw in values:
+        key = str(raw).strip().lower()
+        if key not in _DAY_INDEX:
+            raise ConfigError(f"알 수 없는 요일입니다: {raw!r} (예: fri, sat, sun)")
+        out.append(_DAY_INDEX[key])
+    return out
+
+
 @dataclass
 class Theater:
     name: str = "CGV 용산아이파크몰"
@@ -63,6 +83,7 @@ class Booking:
     max_price_krw: int = 100000
     max_bookings: int = 1
     hold_timeout_sec: int = 540
+    queue_timeout_sec: int = 1800
 
 
 @dataclass
@@ -93,6 +114,10 @@ class Config:
     after_min: int
     before_min: int
     weekdays_only: bool
+    # 0=월 … 6=일. 비어 있으면 요일 제한 없음.
+    days: list[int]
+    # 금요일에만 적용. None이면 금요일도 after/before만 본다.
+    friday_after_min: int | None
     only_dates: list[str]
     seats: Seats
     polling: Polling
@@ -116,6 +141,10 @@ class Config:
             raise ConfigError("seats.count 는 1 이상이어야 합니다")
         if self.after_min > self.before_min:
             raise ConfigError("showtimes.after 가 before 보다 늦습니다")
+        if self.friday_after_min is not None and not (0 <= self.friday_after_min <= self.before_min):
+            raise ConfigError("showtimes.friday_after 가 before 보다 늦습니다")
+        if self.days and any(d < 0 or d > 6 for d in self.days):
+            raise ConfigError("showtimes.days 는 mon~sun (또는 월~일) 이어야 합니다")
         lo, hi = self.polling.interval_sec
         if lo <= 0 or hi < lo:
             raise ConfigError("polling.interval_sec 은 [작은값, 큰값] 이어야 하고 0보다 커야 합니다")
@@ -185,6 +214,8 @@ def load(path=CONFIG_PATH) -> Config:
         after_min=_minutes(st.get("after", "00:00")),
         before_min=_minutes(st.get("before", "28:00")),
         weekdays_only=bool(st.get("weekdays_only", False)),
+        days=_days(st.get("days") or []),
+        friday_after_min=_minutes(st["friday_after"]) if st.get("friday_after") else None,
         only_dates=[str(x).replace("-", "") for x in (st.get("only_dates") or [])],
         seats=Seats(
             count=int(s.get("count", 1)),
@@ -210,6 +241,7 @@ def load(path=CONFIG_PATH) -> Config:
             max_price_krw=int(b.get("max_price_krw", 100000)),
             max_bookings=int(b.get("max_bookings", 1)),
             hold_timeout_sec=int(b.get("hold_timeout_sec", 540)),
+            queue_timeout_sec=int(b.get("queue_timeout_sec", 1800)),
         ),
         notify=Notify(
             on_showtime_open=bool(n.get("on_showtime_open", True)),

@@ -17,7 +17,7 @@ import yaml
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
-from . import seatpick
+from . import queue, seatpick
 from .browser import screenshot
 from .paths import REPO, SHOTS_DIR as SHOTS
 
@@ -136,6 +136,7 @@ class Booker:
         except WebDriverException:
             self.driver.execute_script("arguments[0].click();", el)
         time.sleep(wait)
+        self._wait_queue()
         return spec
 
     def _try_click(self, candidates: list[str], timeout: float = 2.0, **fmt) -> bool:
@@ -153,18 +154,29 @@ class Booker:
 
     # ---- 단계 ----------------------------------------------------------
 
+    def _wait_queue(self) -> None:
+        """접속 대기열이면 풀릴 때까지 기다린다. 기다린 시간은 선점 제한에 안 넣는다."""
+        timeout = getattr(self.cfg.booking, "queue_timeout_sec", 1800)
+        waited = queue.wait_out(self.driver, self.notify, timeout=timeout)
+        if waited and self.deadline:
+            self.deadline += waited
+
     def open_showtime(self, showtime) -> None:
         """예매 페이지에서 대상 회차 화면까지 들어간다."""
         self._check_deadline("회차 진입")
         self.driver.get(self.sel["booking_page"])
-        time.sleep(3.0)
+        time.sleep(2.0)
+        self._wait_queue()
 
         self._click(
             self.sel["theater_picker"], timeout=15, wait=3.0, name=self._theater_needle()
         )
+        self._wait_queue()
 
         self._click_date(showtime.date)
+        self._wait_queue()
         self._click_matching_showtime(showtime)
+        self._wait_queue()
 
         # 비로그인 상태면 여기서 로그인 안내창이 뜬다
         if "로그인이 필요한 서비스" in self._text():
@@ -712,6 +724,9 @@ class Booker:
     # ---- 전체 흐름 -----------------------------------------------------
 
     def book(self, showtime, targets: list[str] | None = None) -> BookingResult:
+        # 대기열은 선점 시계가 돌기 전에 빠진다
+        self.deadline = 0.0
+        self._wait_queue()
         self.deadline = time.time() + self.cfg.booking.hold_timeout_sec
         # 감시가 이미 몇 석을 잡을 수 있는지 확인했다면 그 수를 따른다
         count = len(targets) if targets else self.cfg.seats.count
@@ -735,6 +750,9 @@ class Booker:
             # 어느 단계에서 막혔는지 눈으로 봐야 셀렉터를 고칠 수 있다
             shot = screenshot(self.driver, "booking-failed")
             print(f"      실패 화면 저장: {shot}", flush=True)
+            raise BookingError(f"{exc}\n실패 화면: {shot}") from exc
+        except queue.QueueError as exc:
+            shot = screenshot(self.driver, "queue-stuck")
             raise BookingError(f"{exc}\n실패 화면: {shot}") from exc
 
         if self.dry_run or not self.cfg.booking.auto_pay:

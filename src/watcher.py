@@ -16,7 +16,7 @@ import time
 from datetime import datetime
 
 from . import seatpick
-from .cgv import BlockedError, CgvApi, CgvError, Showtime, daterange
+from .cgv import BlockedError, CgvApi, CgvError, QueueWaitError, Showtime, daterange
 
 OPEN_DATES_EVERY = 6  # N턴마다 예매 가능 날짜 목록을 다시 본다
 SEAT_CHECKS_PER_POLL = 8  # 한 턴에 좌석맵까지 확인할 회차 수 상한
@@ -32,6 +32,7 @@ class Watcher:
         self.wanted_dates = set(daterange(cfg.date_from, cfg.date_to))
         if cfg.only_dates:
             self.wanted_dates &= set(cfg.only_dates)
+        self.wanted_dates = {d for d in self.wanted_dates if self._date_wanted(d)}
 
         self.active_dates: list[str] = []
         self.candidate_dates: list[str] = []
@@ -51,6 +52,30 @@ class Watcher:
 
     # ---- 조건 매칭 -----------------------------------------------------
 
+    def _weekday(self, ymd: str) -> int | None:
+        if len(ymd) != 8:
+            return None
+        try:
+            return datetime.strptime(ymd, "%Y%m%d").weekday()
+        except ValueError:
+            return None
+
+    def _date_wanted(self, ymd: str) -> bool:
+        """시간표 API를 칠 가치가 있는 날짜인지.
+
+        요일 제한이 있으면 월~목처럼 절대 안 고를 날은 목록에서 빼서,
+        새 주가 열렸을 때 금/토/일만 보게 한다.
+        """
+        wd = self._weekday(ymd)
+        if wd is None:
+            return True
+        cfg = self.cfg
+        if cfg.days:
+            return wd in cfg.days
+        if cfg.weekdays_only:
+            return wd < 5
+        return True
+
     def matches(self, s: Showtime) -> bool:
         cfg = self.cfg
         if cfg.movie_title and cfg.movie_title not in s.movie:
@@ -66,12 +91,14 @@ class Watcher:
         if start < 0 or not (cfg.after_min <= start <= cfg.before_min):
             return False
 
-        if cfg.weekdays_only and len(s.date) == 8:
-            try:
-                if datetime.strptime(s.date, "%Y%m%d").weekday() >= 5:
-                    return False
-            except ValueError:
-                pass
+        wd = self._weekday(s.date)
+        if wd is not None:
+            if cfg.days and wd not in cfg.days:
+                return False
+            if cfg.weekdays_only and not cfg.days and wd >= 5:
+                return False
+            if wd == 4 and cfg.friday_after_min is not None and start < cfg.friday_after_min:
+                return False
 
         return True
 
@@ -122,15 +149,21 @@ class Watcher:
 
         dates_to_scan = list(self.active_dates)
 
-        # 첫 턴에는 전부 훑어 기준선을 만든다
+        # 새 주가 열리면 그 날짜가 목록 끝에 붙는다. 먼 날(주말)부터 먼저 본다.
+        new_wanted = sorted(
+            (d for d in newly_opened_dates if self._date_wanted(d)),
+            reverse=True,
+        )
+
+        # 첫 턴에는 열린 날짜를 훑어 기준선을 만든다. 역시 먼 날부터.
         if not self._first_scan_done:
-            dates_to_scan = sorted(self.known_open_dates)
-        elif newly_opened_dates:
-            dates_to_scan += [d for d in newly_opened_dates if d not in dates_to_scan]
+            dates_to_scan = sorted(self.known_open_dates, reverse=True)
+        elif new_wanted:
+            dates_to_scan = new_wanted + [d for d in dates_to_scan if d not in new_wanted]
         elif self.candidate_dates:
-            # 후보는 매 턴 하나씩만 확인해 요청 수를 억제한다
-            self._rr %= len(self.candidate_dates)
-            pick = self.candidate_dates[self._rr]
+            # 후보는 매 턴 하나씩만 확인해 요청 수를 억제한다. 먼 날부터 돈다.
+            ordered = sorted(self.candidate_dates, reverse=True)
+            pick = ordered[self._rr % len(ordered)]
             self._rr += 1
             if pick not in dates_to_scan:
                 dates_to_scan.append(pick)
@@ -268,6 +301,10 @@ class Watcher:
 
                 self._maybe_heartbeat()
 
+            except QueueWaitError as exc:
+                print(f"  [대기열] API가 대기 페이지를 돌려줬습니다. 잠시 쉽니다. {exc}", flush=True)
+                time.sleep(12)
+                continue
             except BlockedError as exc:
                 wait = self._raise_backoff()
                 self.notify.blocked(str(exc), wait)
