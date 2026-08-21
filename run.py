@@ -136,6 +136,7 @@ def main() -> int:
         check_every_sec=cfg.session.check_every_sec,
         keepalive_every_sec=cfg.session.keepalive_every_sec or float("inf"),
         renotify_every_sec=cfg.session.renotify_every_sec,
+        confirm_times=cfg.session.confirm_times,
     )
     watcher = Watcher(api, cfg, notifier, session_guard=guard)
 

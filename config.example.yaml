@@ -71,6 +71,9 @@ session:
   check_every_sec: 60
   keepalive_every_sec: 600   # 유휴 만료를 막으려고 주기적으로 세션을 건드린다. 0이면 끔.
   renotify_every_sec: 1800   # 끊긴 동안 이 간격으로 다시 알린다 (알림을 놓쳤을 때 대비)
+  # 로그아웃이 확실한 응답이 연속 이 횟수만큼 나와야 만료로 본다. 네트워크가
+  # 한 번 튄 것을 만료로 오판하면 그동안 예매 시도까지 멈춘다.
+  confirm_times: 2
 
 notify:
   # 실제 URL은 .env 의 DISCORD_WEBHOOK_URL 에 넣으세요.

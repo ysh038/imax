@@ -91,6 +91,7 @@ class Session:
     check_every_sec: float = 60.0
     keepalive_every_sec: float = 600.0
     renotify_every_sec: float = 1800.0
+    confirm_times: int = 2
 
 
 @dataclass
@@ -256,6 +257,7 @@ def load(path=CONFIG_PATH) -> Config:
             check_every_sec=float(ss.get("check_every_sec", 60)),
             keepalive_every_sec=float(ss.get("keepalive_every_sec", 600)),
             renotify_every_sec=float(ss.get("renotify_every_sec", 1800)),
+            confirm_times=int(ss.get("confirm_times", 2)),
         ),
         pay_password=os.getenv("CGV_PAY_PASSWORD", "").strip(),
         toss_phone=os.getenv("TOSS_PHONE", "").strip(),

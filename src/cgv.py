@@ -257,6 +257,12 @@ class CgvApi:
 
         CGV는 비로그인 요청에도 statusCode 0을 주면서 data만 null로 비운다.
         그래서 HTTP 상태나 statusCode가 아니라 data 유무를 봐야 한다.
+
+        [중요] 여기서 False는 "로그아웃이 확실하다"는 뜻이어야 한다. 네트워크
+        실패나 서버 오류, 대기열 응답은 로그인 여부를 알 수 없다는 뜻이지
+        끊겼다는 뜻이 아니다. 예전에는 CgvError를 통째로 삼켜 False로 뭉갰는데,
+        맥이 자다 깨거나 Wi-Fi가 잠깐 끊긴 순간마다 멀쩡한 세션을 만료로
+        오판했다. 판단 불가는 그대로 올려보내고 호출자가 정하게 한다.
         """
         try:
             return self.call("login_check") is not None
@@ -264,10 +270,6 @@ class CgvApi:
             if exc.needs_login:
                 return False
             raise
-        except QueueWaitError:
-            raise
-        except CgvError:
-            return False
 
     def open_dates(self) -> list[str]:
         """이 극장에서 지금 예매 가능한 날짜(YYYYMMDD) 목록."""

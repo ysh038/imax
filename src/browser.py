@@ -116,8 +116,13 @@ def wait_for_login(driver: webdriver.Chrome, is_logged_in, poll_sec: float = 3.0
         driver.get(CGV_HOME)
         time.sleep(2)
 
-    if is_logged_in():
-        return
+    # 판정 함수는 네트워크가 튀면 예외를 던진다. 첫 확인이 실패했다고
+    # 죽을 이유는 없고, 아래 폴링 루프가 알아서 다시 본다.
+    try:
+        if is_logged_in():
+            return
+    except Exception as exc:
+        print(f"[로그인 확인] 첫 확인 실패, 계속 시도합니다: {exc}")
 
     print("\n[로그인 필요] 열려 있는 Chrome 창에서 CGV에 로그인해 주세요.")
     print("             로그인하면 자동으로 감지하고 이어서 진행합니다. (Ctrl+C로 중단)\n")
