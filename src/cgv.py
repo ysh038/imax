@@ -16,6 +16,7 @@ from typing import Any
 import yaml
 
 from .paths import ENDPOINTS_PATH
+from .queue import dump_api_body
 from .seatpick import Seat
 
 # 페이지 안에서 fetch를 실행하고 결과를 콜백으로 돌려준다.
@@ -225,6 +226,7 @@ class CgvApi:
             raise BlockedError(f"차단 감지 (HTTP {status}) {url}")
         lowered = text.lower()
         if any(m in lowered for m in ("netfunnel", "nfplus", "접속 대기", "접속대기", "대기열")):
+            dump_api_body(url, status, text)
             raise QueueWaitError(f"접속 대기열 응답 (HTTP {status}) {url}")
         if status == 0:
             raise CgvError(f"네트워크 실패: {text[:200]}")
@@ -239,6 +241,7 @@ class CgvApi:
             payload = json.loads(res["text"])
         except ValueError:
             if any(m in res["text"].lower() for m in ("netfunnel", "nfplus", "접속대기", "대기열")):
+                dump_api_body(url, res["status"], res["text"])
                 raise QueueWaitError(f"{role}: 대기열 HTML 응답") from None
             raise CgvError(f"{role}: JSON이 아닌 응답 (HTTP {res['status']})") from None
 
