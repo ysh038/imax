@@ -61,6 +61,11 @@ cp .env.example .env
 caffeinate -dimsu .venv/bin/python run.py   # 실제 운용 (맥 절전 방지)
 ```
 
+닫은 시점에
+> pmset -g log | grep -i "Sleep\|Wake" | tail -20 
+
+Entering Sleep 이 있으면 봇도 멈춘것
+
 첫 실행에서 Chrome 창이 뜨면 CGV에 로그인한다. 로그인은 `.chrome-profile/`에 저장돼
 다음부터는 자동으로 넘어간다.
 
