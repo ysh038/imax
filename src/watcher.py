@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from . import seatpick
 from .cgv import BlockedError, CgvApi, CgvError, QueueWaitError, Showtime, daterange
@@ -90,6 +90,13 @@ class Watcher:
         start = s.start_minutes
         if start < 0 or not (cfg.after_min <= start <= cfg.before_min):
             return False
+
+        # 지금부터 너무 가까운 회차는 잡아봐야 갈 수가 없다. 상영이 이미
+        # 시작한 회차도 여기서 같이 걸러진다.
+        if cfg.min_lead_hours > 0:
+            starts = s.starts_at
+            if starts is not None and starts - datetime.now() < timedelta(hours=cfg.min_lead_hours):
+                return False
 
         wd = self._weekday(s.date)
         if wd is not None:

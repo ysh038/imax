@@ -120,6 +120,8 @@ class Config:
     days: list[int]
     # 금요일에만 적용. None이면 금요일도 after/before만 본다.
     friday_after_min: int | None
+    # 지금부터 이 시간 안에 시작하는 회차는 아예 안 잡는다. 0이면 제한 없음.
+    min_lead_hours: float
     only_dates: list[str]
     seats: Seats
     polling: Polling
@@ -156,6 +158,8 @@ class Config:
             raise ConfigError("seats.min_count 는 1 이상 seats.count 이하여야 합니다")
         if not 0 < self.seats.center_ratio <= 1.0:
             raise ConfigError("seats.center_ratio 는 0 초과 1 이하여야 합니다 (1이면 제한 없음)")
+        if self.min_lead_hours < 0:
+            raise ConfigError("showtimes.min_lead_hours 는 0 이상이어야 합니다")
         if self.seats.min_row and not self.seats.min_row.isalpha():
             raise ConfigError("seats.min_row 는 열 이름이어야 합니다 (예: E)")
 
@@ -218,6 +222,7 @@ def load(path=CONFIG_PATH) -> Config:
         weekdays_only=bool(st.get("weekdays_only", False)),
         days=_days(st.get("days") or []),
         friday_after_min=_minutes(st["friday_after"]) if st.get("friday_after") else None,
+        min_lead_hours=float(st.get("min_lead_hours", 0)),
         only_dates=[str(x).replace("-", "") for x in (st.get("only_dates") or [])],
         seats=Seats(
             count=int(s.get("count", 1)),

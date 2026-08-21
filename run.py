@@ -173,7 +173,9 @@ def main() -> int:
             # 좌석맵 확인과 실제 진입 사이에 남이 채갔거나, 조건(연석·선호열)이 너무 좁다.
             watcher.invalidate_seats(showtime)
             wait = tracker.record_failure(showtime.key)
-            print(f"  [건너뜀] {showtime}: {exc} ({wait:.0f}초 뒤 재시도)", flush=True)
+            # 20초는 '이 회차에 다시 들어가도 되는 최소 간격'일 뿐이다.
+            # 실제 재진입은 좌석맵이 바뀌어 다시 후보가 될 때 일어난다.
+            print(f"  [건너뜀] {showtime}: {exc} (좌석이 바뀌면 다시 봅니다, 최소 {wait:.0f}초)", flush=True)
             return False
         except BookingError as exc:
             if "로그인" in str(exc):

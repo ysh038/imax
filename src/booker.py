@@ -18,7 +18,7 @@ from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
 from . import queue, seatpick
-from .browser import screenshot
+from .browser import CGV_HOME, screenshot
 from .paths import REPO, SHOTS_DIR as SHOTS
 
 SELECTORS_PATH = REPO / "selectors.yaml"
@@ -723,6 +723,19 @@ class Booker:
 
     # ---- 전체 흐름 -----------------------------------------------------
 
+    def reset(self) -> None:
+        """예매 화면을 빠져나와 중립 페이지로 돌아간다.
+
+        실패한 자리에 그대로 서 있으면 두 가지가 나쁘다. 감시 fetch가 예매
+        세션이 열린 페이지에서 나가고, 사람이 화면만 보면 봇이 멈춘 것처럼
+        보인다. 복귀에 실패해도 다음 진입이 어차피 driver.get 으로 시작하므로
+        여기서 죽지는 않는다.
+        """
+        try:
+            self.driver.get(CGV_HOME)
+        except Exception as exc:
+            print(f"      화면 복귀 실패(무시): {exc}", flush=True)
+
     def book(self, showtime, targets: list[str] | None = None) -> BookingResult:
         # 대기열은 선점 시계가 돌기 전에 빠진다
         self.deadline = 0.0
@@ -746,13 +759,22 @@ class Booker:
 
             print("  5/6 결제", flush=True)
             amount, booking_no = self.pay()
+        except NoSelectableSeats:
+            # 조건에 맞는 자리가 없는 건 '실패'가 아니라 그냥 지나갈 일이다.
+            # 취소표 감시는 이 상황을 수시로 만나므로 스크린샷도 알림도 남기지
+            # 않는다. 아래 BookingError 절이 이걸 평범한 BookingError 로 다시
+            # 던지는 바람에 run.py 의 전용 처리가 죽은 코드였다.
+            self.reset()
+            raise
         except BookingError as exc:
             # 어느 단계에서 막혔는지 눈으로 봐야 셀렉터를 고칠 수 있다
             shot = screenshot(self.driver, "booking-failed")
             print(f"      실패 화면 저장: {shot}", flush=True)
+            self.reset()
             raise BookingError(f"{exc}\n실패 화면: {shot}") from exc
         except queue.QueueError as exc:
             shot = screenshot(self.driver, "queue-stuck")
+            self.reset()
             raise BookingError(f"{exc}\n실패 화면: {shot}") from exc
 
         if self.dry_run or not self.cfg.booking.auto_pay:

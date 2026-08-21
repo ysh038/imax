@@ -143,6 +143,22 @@ class Showtime:
         return _minutes(self.start_raw)
 
     @property
+    def starts_at(self) -> datetime | None:
+        """실제 상영 시각.
+
+        CGV는 심야 회차를 '2430'처럼 24시를 넘겨 적는다. 분으로 환산해 날짜에
+        더하면 자정을 알아서 넘어간다. 형식이 깨졌으면 None.
+        """
+        mins = self.start_minutes
+        if mins < 0 or len(self.date) != 8:
+            return None
+        try:
+            day = datetime.strptime(self.date, "%Y%m%d")
+        except ValueError:
+            return None
+        return day + timedelta(minutes=mins)
+
+    @property
     def seats_free(self) -> int:
         try:
             return int(self._f("seats_free", 0) or 0)
