@@ -1,0 +1,109 @@
+# 예매 화면 조작에 쓰는 셀렉터.
+# CGV는 Next.js CSS 모듈이라 클래스명이 `screenInfo_timeLink__45VfR` 처럼
+# 뒤에 해시가 붙는다. 배포될 때마다 해시가 바뀌므로 항상 부분 일치(*=)로 쓴다.
+#
+# 각 항목은 후보 목록이며 위에서부터 시도한다.
+# `text:` 로 시작하면 그 문자열을 가진 클릭 가능 요소를 찾는다.
+
+booking_page: https://cgv.co.kr/cnm/movieBook/cinema
+
+theater_picker:
+  # 극장 선택 바텀시트의 극장 버튼. {name} 이 극장 이름으로 치환된다.
+  - 'text:{name}'
+
+date_tab:
+  # 확인됨: <button class="dayScroll_scrollItem__xxxx"><span class="dayScroll_txt__">금</span>
+  #                                                   <span class="dayScroll_number__">21</span></button>
+  # Swiper 캐러셀이라 화면 밖 날짜도 DOM에는 있다. 보이는지 따지지 말고 눌러야 한다.
+  button: 'button[class*="dayScroll_scrollItem"]'
+  number: 'span[class*="dayScroll_number"]'
+  active_marker: itemActive
+
+showtime_button:
+  # 회차 버튼. 확인됨: <button class="screenInfo_timeLink__xxxx" aria-disabled="false">
+  - 'button[class*="timeLink"]:not([aria-disabled="true"])'
+
+showtime_button_time_text:
+  # 위 버튼 안에서 시작 시각이 들어 있는 요소
+  - 'span[class*="screenInfo_start"]'
+
+confirm_dialog:
+  # "로그인 하시겠습니까?" 같은 확인창의 확인 버튼
+  - 'text:확인'
+
+# --- 로그인 이후 화면 (/cnm/selectVisitorCnt). 실측으로 확정함 ---
+#
+# 인원 → 좌석 → 결제가 한 페이지 안에서 모달로 이어진다.
+#   1) 관람인원에서 '일반' N 버튼
+#   2) '선택' 버튼으로 좌석 모달 열기
+#   3) 좌석 클릭 후 '선택완료'
+#   4) 'N원 결제하기' → 연령/취소규정 확인 모달의 '결제하기'
+#   5) /mpy/main 결제 페이지
+
+visitor_count:
+  # +/- 카운터가 아니라 1~8 숫자 버튼이다.
+  # 일반/청소년/우대/경로 그룹이 똑같은 버튼을 갖고 있어서 라벨로 그룹을 좁혀야 한다.
+  group: 'div[class*="numberChoice_NumberWrap"]'
+  label: 'div[class*="numberChoice_label"]'
+  button: 'button.btn-num'
+  active_marker: active
+  # 인원을 고르면 활성화된다. 좌석을 이미 고른 뒤에는 '변경'으로 바뀐다.
+  open_seatmap:
+    - 'button[class*="btnBgAnimation"]'
+    - 'text:선택'
+  # 좌석 모달에서 인원 선택 화면으로 되돌아가는 버튼
+  change:
+    - 'text:인원변경'
+
+seatmap:
+  # 좌석 버튼이 미니맵과 본지도로 두 벌 렌더링된다. 라벨이 같으니 중복을 걸러야 하고,
+  # 좌우 위치를 볼 때는 큰 쪽(본지도)만 써야 중앙 판정이 맞는다.
+  seat: 'button[class*="seatMap_seatNumber"]'
+  disabled_marker: seatMap_seatDisabled
+  selected_marker: seatMap_active
+  skip_markers:
+    - seatMap_seatPreferential   # 장애인석
+  done:
+    - 'text:선택완료'
+
+payment:
+  # "11,000원  결제하기" 처럼 금액이 붙어 있다
+  enter:
+    - 'button[class*="btn-100"][class*="fill-main"]'
+  # 연령 고지와 취소 규정을 띄우는 확인 모달
+  confirm_modal_button: '결제하기'
+  page_url_marker: /mpy/main
+  method_button: 'ul[class*="basicPaymentList"] > li button'
+  agree_all: '#chkAll'
+  pay_button:
+    - 'button.btn-font2way'
+    - 'text:결제하기'
+  # 좌석 선점이 풀리면 이 문구가 뜬다
+  expired_marker: 결제 가능 시간이 경과
+
+# 토스페이. 결제하기를 누르면 pay.toss.im 으로 넘어간다.
+# '휴대폰번호' 탭에 번호와 생년월일을 넣으면 토스 앱으로 결제 알림이 간다.
+# 카드 등록도 CGV 간편결제 비밀번호도 필요 없고, 승인만 폰에서 하면 된다.
+toss:
+  url_marker: pay.toss.im
+  phone_tab: 휴대폰번호
+  qr_tab: QR코드
+  # 이 탭의 입력칸은 name도 id도 없어서 placeholder로 구분한다
+  phone_input: 'input[type="tel"][placeholder*="010"]'
+  birth_input: 'input[type="tel"][maxlength="6"]'
+  qr_image: 'img[src^="data:image"]'
+  # 승인이 끝나면 CGV로 되돌아온다
+  done_url_marker: cgv.co.kr
+
+complete:
+  # 예매 완료 화면임을 알려주는 표식
+  markers:
+    - 'text:영화 예매가 완료'
+    - 'text:예매가 완료'
+    - 'text:예매완료'
+    - 'text:결제완료'
+    - 'text:예매번호'
+  page_url_marker: /mpy/purchase/
+  booking_number:
+    - '[class*="bookingNo"]'
+    - '[class*="reserveNo"]'

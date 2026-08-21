@@ -1,0 +1,114 @@
+# CGV 차세대 시스템(2025-07 개편) 엔드포인트.
+# 실제 브라우저 트래픽을 녹화해 확인한 값들이다. docs/cgv_api.md 참고.
+# CGV가 API를 바꾸면 `python tools/record_api.py`를 다시 돌려 여기를 갱신한다.
+
+co_cd: A420                      # CGV 법인 코드. 모든 요청에 붙는다.
+web_origin: https://cgv.co.kr
+api_origin: https://api.cgv.co.kr
+
+# 응답 공통 형태: {"statusCode": 0, "statusMessage": "...", "data": ...}
+# statusCode 0 이 성공.
+success_code: 0
+
+# [주의] 인증이 필요한 호출은 반드시 web_origin(cgv.co.kr)을 써야 한다.
+# api.cgv.co.kr 은 브라우저 안에서 fetch 해도 401을 돌려준다. accessToken 쿠키를
+# Bearer 헤더로 붙여도 마찬가지라, SPA가 쓰는 같은 도메인 경로만 사용한다.
+
+roles:
+  # 로그인 여부. 비로그인이면 data 가 null, 로그인이면 회원 정보 객체가 온다.
+  # checkScrenUrlValid 의 custLginYn 은 로그인 상태에서도 "N"으로 와서 못 쓴다.
+  login_check:
+    method: GET
+    url: "{web_origin}/api/v1/member/cust/info/searchMktRcvIagrYn"
+
+  # 유휴 만료를 늦추려고 주기적으로 건드리는 인증 엔드포인트.
+  session_keepalive:
+    method: GET
+    url: "{web_origin}/api/v1/member/cust/info/searchMktRcvIagrYn"
+
+  # 좌석 단위 상태. 상영시간표의 frSeatCnt 는 장애인석까지 세기 때문에
+  # "몇 석 남았다"는 숫자만 보면 잡을 수 없는 자리에 계속 달려들게 된다.
+  seat_data:
+    method: GET
+    url: "{web_origin}/api/v1/booking/searchIfSeatData"
+    params:
+      coCd: "{co_cd}"
+      siteNo: "{site_no}"
+      scnYmd: "{scn_ymd}"
+      scnsNo: "{scns_no}"
+      scnSseq: "{scn_sseq}"
+
+  # 극장별 예매 가능 날짜. data: [{"scnYmd":"20260820","hldyYn":"N"}, ...]
+  # 새 회차 오픈 감지의 1차 신호.
+  open_dates:
+    method: GET
+    url: "{web_origin}/api/v1/booking/searchSiteScnscYmdListBySite"
+    params:
+      coCd: "{co_cd}"
+      siteNo: "{site_no}"
+
+  # 전 극장 통틀어 마지막 상영일. data: [{"scnYmd":"20260920"}]
+  last_screening_day:
+    method: GET
+    url: "{web_origin}/api/v1/booking/searchLastScnDay"
+    params:
+      coCd: "{co_cd}"
+
+  # 특정 날짜의 회차 목록(평면 리스트). 감시 루프의 핵심.
+  showtimes:
+    method: GET
+    url: "{web_origin}/api/v1/booking/searchMovScnInfo"
+    params:
+      coCd: "{co_cd}"
+      siteNo: "{site_no}"
+      scnYmd: "{scn_ymd}"
+      rtctlScopCd: "08"
+
+  # 상영 중인 영화 목록 (movNo 조회용)
+  movies:
+    method: GET
+    url: "{web_origin}/api/v1/booking/searchAtktTopPostrList"
+    params:
+      coCd: "{co_cd}"
+      movNm: ""
+      div: ""
+      attrCd: ""
+
+  # 지역/극장 목록 (siteNo 조회용)
+  theaters:
+    method: GET
+    url: "{web_origin}/api/v1/booking/searchRegnList"
+    params:
+      coCd: "{co_cd}"
+
+# showtimes 응답에서 쓰는 필드 이름. CGV가 스키마를 바꾸면 여기만 고친다.
+# searchIfSeatData 응답 해석 규칙.
+#   seatSaleYn  Y 라야 팔 수 있는 자리
+#   seatSalfrmCd 01=일반석 02=미판매 03=특수 04=장애인석
+# 용아맥 IMAX관은 장애인석 6석이 늘 비어 있어서 04를 걸러야 잔여석 판단이 맞는다.
+seat_rules:
+  sale_flag_field: seatSaleYn
+  sale_flag_ok: "Y"
+  form_field: seatSalfrmCd
+  form_ok: ["01"]
+  row_field: seatRowNm
+  number_field: seatNo
+
+showtime_fields:
+  movie_name: movNm          # "오디세이"
+  movie_no: movNo            # "30001323"
+  screen_name: scnsNm        # "IMAX관"
+  screen_no: scnsNo          # "018"
+  special_grade: tcscnsGradNm  # "아이맥스"
+  format_name: movkndDsplNm  # "IMAX LASER 2D"
+  product_no: prodNo         # "20054745" 회차 고유키
+  product_name: prodNm       # "오디세이(IMAX LASER 2D)"
+  date: scnYmd               # "20260820"
+  start_time: scnsrtTm       # "2430" = 24:30 (심야는 24를 넘어간다)
+  end_time: scnendTm         # "2732"
+  sale_end_time: salEndTm
+  seats_total: stcnt         # 624
+  seats_free: frSeatCnt      # 즉시 예매 가능한 잔여석
+  seats_free_incl_held: frtmpSeatCnt  # 잔여석 + 임시 선점석
+  max_per_booking: atktPsblQty        # 1회 최대 예매 매수
+  sequence: scnSseq

@@ -1,0 +1,78 @@
+# 이 파일을 config.yaml 로 복사해서 쓰세요. config.yaml은 git에 올라가지 않습니다.
+#   cp config.example.yaml config.yaml
+
+theater:
+  name: CGV 용산아이파크몰
+  site_no: "0013"          # tools/list_theaters.py 로 확인 가능
+  # 상영관명/특별관등급/포맷 중 하나라도 이 단어를 포함해야 대상이 된다.
+  # 용아맥은 scnsNm="IMAX관", tcscnsGradNm="아이맥스", movkndDsplNm="IMAX LASER 2D".
+  screen_keywords: [IMAX, 아이맥스]
+
+movie:
+  title_contains: 오디세이   # movNm 부분 일치
+
+dates:
+  from: "2026-08-20"
+  to: "2026-12-31"
+  # 아직 예매가 열리지 않은 날짜도 감시 대상에 포함할지. true면 오픈 대기 모드가 켜진다.
+  wait_for_open: true
+
+showtimes:
+  # CGV 표기 그대로. 심야는 24시를 넘어간다 (25:30 = 새벽 1시 30분).
+  after: "00:00"
+  before: "28:00"
+  weekdays_only: false
+  # 이 회차들만 노린다. 비워두면 조건에 맞는 전부.
+  only_dates: []
+
+seats:
+  count: 2                 # 원하는 매수
+  min_count: 1             # 못 채우면 여기까지 줄인다. count와 같게 두면 안 줄인다.
+  adjacent: true           # 2매 이상은 붙어 있는 자리만. 통로 건너는 연석으로 안 친다.
+
+  # --- 필수 조건. 여기 맞는 자리가 없으면 자리가 나도 예매하지 않는다 ---
+  min_row: E               # 이 열 이후만. 비우면 제한 없음.
+  center_ratio: 0.5        # 각 열 가로폭의 가운데 50% 안쪽만. 1이면 제한 없음.
+
+  # --- 선호 조건. 위를 통과한 자리들 사이의 순위만 정한다 ---
+  prefer_rows: [H, I, G, J, F, K]   # 용아맥 명당 우선순위 (앞이 우선)
+  avoid_rows: []
+  prefer_center: true
+
+polling:
+  interval_sec: [4, 9]     # 이 범위에서 매번 랜덤. Cloudflare 회피용.
+  backoff_start_sec: 60    # 차단 감지 시 첫 대기
+  backoff_max_sec: 900
+  # 예매 오픈이 임박했다고 아는 시각이 있으면 그때만 빠르게 돈다 (HH:MM, 비우면 미사용)
+  burst_at: ""
+  burst_interval_sec: 1.0
+  burst_window_sec: 120
+
+booking:
+  auto_pay: true           # false면 결제 직전에 멈추고 알림만
+  # CGV 결제 화면의 결제수단 이름 그대로. 로고 이미지만 있는 수단은 alt 텍스트를 쓴다.
+  # 고를 수 있는 값: 앱카드 / 휴대폰결제 / 내통장결제 / Npay / 이지웰페이 / toss /
+  #                 스마일페이 / PAYCO / SSGPAY / 카카오페이 / CJ PAY
+  #
+  # toss 를 권한다. 카드를 CGV에 등록할 필요 없이 .env 의 번호·생년월일만 있으면
+  # 봇이 결제 알림까지 보내고, 밖에 있어도 폰에서 승인 한 번으로 예매가 끝난다.
+  pay_method: "toss"
+  max_price_krw: 100000    # 총 결제금액이 이보다 크면 중단
+  max_bookings: 1          # 성공 횟수가 이 값에 닿으면 프로그램 종료
+  hold_timeout_sec: 540    # 좌석 선점 유지시간(약 10분) 안쪽으로 잡는다
+
+session:
+  # 상영시간표 조회는 비로그인으로도 되기 때문에, 세션이 끊겨도 봇은 멀쩡히 도는 것처럼
+  # 보인다. 그래서 로그인 상태를 따로 확인하고 끊기면 디스코드로 알린다.
+  check_every_sec: 60
+  keepalive_every_sec: 600   # 유휴 만료를 막으려고 주기적으로 세션을 건드린다. 0이면 끔.
+  renotify_every_sec: 1800   # 끊긴 동안 이 간격으로 다시 알린다 (알림을 놓쳤을 때 대비)
+
+notify:
+  # 실제 URL은 .env 의 DISCORD_WEBHOOK_URL 에 넣으세요.
+  on_showtime_open: true   # 새 회차가 열렸을 때
+  on_seat_found: true      # 잔여석 발견
+  on_success: true
+  on_failure: true
+  on_blocked: true
+  heartbeat_min: 60        # N분마다 생존 신호. 0이면 끔.
