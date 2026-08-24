@@ -402,18 +402,34 @@ class Booker:
             raise SeatTakenError(f"좌석 선택이 반영되지 않았습니다: {', '.join(missing)}")
 
     def _click_seat(self, label: str) -> None:
+        """본지도의 좌석을 누른다.
+
+        같은 라벨이 미니맵과 본지도에 두 벌 있고 셀렉터에 둘 다 걸린다. 그냥
+        첫 번째를 누르면 DOM 순서상 앞에 있는 미니맵을 누르게 되는데, 미니맵은
+        클릭을 안 받아서 선택이 조용히 아무 일도 일어나지 않는다. _read_seatmap
+        이 하듯 넓은 쪽을 골라야 한다.
+        """
         js = """
         const [sel, label, disabledMark] = arguments;
-        const el = Array.from(document.querySelectorAll(sel)).find(e =>
-          e.textContent.trim() === label && !(e.className || '').toString().includes(disabledMark));
-        if (!el) return false;
+        const cands = Array.from(document.querySelectorAll(sel))
+          .filter(e => (e.textContent || '').trim() === label);
+        if (!cands.length) return {ok: false, why: 'none', n: 0};
+        // 넓은 쪽이 본지도다
+        cands.sort((a, b) =>
+          b.getBoundingClientRect().width - a.getBoundingClientRect().width);
+        const el = cands.find(e =>
+          !(e.className || '').toString().includes(disabledMark));
+        if (!el) return {ok: false, why: 'disabled', n: cands.length};
         el.scrollIntoView({block: 'center'});
         el.click();
-        return true;
+        return {ok: true, n: cands.length,
+                w: Math.round(el.getBoundingClientRect().width)};
         """
         cfg = self.sel["seatmap"]
-        if not self.driver.execute_script(js, cfg["seat"], label, cfg["disabled_marker"]):
-            raise SeatTakenError(f"좌석 클릭 실패: {label} (남이 먼저 가져간 듯)")
+        res = self.driver.execute_script(js, cfg["seat"], label, cfg["disabled_marker"]) or {}
+        if not res.get("ok"):
+            why = {"none": "화면에 없음", "disabled": "선택 불가 표시"}.get(res.get("why"), "알 수 없음")
+            raise SeatTakenError(f"좌석 클릭 실패: {label} ({why}, 후보 {res.get('n', 0)}개)")
         time.sleep(0.3)
 
     def enter_payment(self) -> None:
