@@ -305,7 +305,13 @@ class Booker:
                 available=len(chosen),
             )
 
+        # [함정] 관람인원을 먼저 고르기 때문에, CGV는 좌석 하나만 눌러도 인원수
+        # 만큼 연석을 통째로 잡아 준다. 목록을 그대로 순회하며 다 누르면 두 번째
+        # 클릭이 토글로 작동해 선택이 통째로 풀린다. 실제로 H7을 누르면 H7·H8이
+        # 함께 잡히고, 이어서 H8을 누르는 순간 0석이 됐다.
         for label in chosen:
+            if label in self._selected_labels():
+                continue
             self._click_seat(label)
 
         self._verify_selected(chosen)
@@ -408,13 +414,26 @@ class Booker:
             if not missing:
                 return
             if time.time() >= deadline:
+                have = sorted(self._selected_labels()) or ["없음"]
                 raise SeatTakenError(
                     f"좌석 선택이 반영되지 않았습니다: {', '.join(missing)} "
-                    f"({timeout:.0f}초 기다림)"
+                    f"({timeout:.0f}초 기다림, 실제 선택된 자리: {', '.join(have)})"
                 )
             time.sleep(0.3)
 
-    def _click_seat(self, label: str) -> None:
+    def _selected_labels(self) -> set[str]:
+        """지금 선택 표시가 붙어 있는 좌석 라벨."""
+        cfg = self.sel["seatmap"]
+        js = """
+        const [sel, mark] = arguments;
+        const out = new Set();
+        for (const e of document.querySelectorAll(sel))
+          if ((e.className || '').toString().includes(mark)) out.add(e.textContent.trim());
+        return Array.from(out);
+        """
+        return set(self.driver.execute_script(js, cfg["seat"], cfg["selected_marker"]) or [])
+
+    def _click_seat(self, label: str, settle: float = 5.0) -> None:
         """본지도의 좌석을 누른다.
 
         같은 라벨이 미니맵과 본지도에 두 벌 있고 셀렉터에 둘 다 걸린다. 그냥
@@ -443,7 +462,14 @@ class Booker:
         if not res.get("ok"):
             why = {"none": "화면에 없음", "disabled": "선택 불가 표시"}.get(res.get("why"), "알 수 없음")
             raise SeatTakenError(f"좌석 클릭 실패: {label} ({why}, 후보 {res.get('n', 0)}개)")
-        time.sleep(0.3)
+
+        # 선택은 서버 왕복이라 즉시 반영되지 않는다. 반영을 보고 다음으로 넘어가야
+        # 그 사이 상태를 잘못 읽고 이미 잡힌 자리를 또 누르는 일이 없다.
+        deadline = time.time() + settle
+        while time.time() < deadline:
+            if label in self._selected_labels():
+                return
+            time.sleep(0.2)
 
     def enter_payment(self) -> None:
         """'N원 결제하기' → 연령/취소규정 확인 모달 → /mpy/main 결제 페이지."""
