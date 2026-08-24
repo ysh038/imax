@@ -10,13 +10,17 @@
 # [안전장치 두 겹] booking.auto_pay 를 false 로 두었고, --dry-run 도 같이 쓴다.
 # 둘 중 하나만 있어도 결제 버튼 앞에서 멈춘다. 절대 auto_pay 를 켜지 말 것.
 
+# [중요] 예매 화면의 극장 칩 목록에 이미 있는 극장만 고를 수 있다. booker 의
+# theater_picker 는 'text:{극장명}' 으로 칩을 누르는데, 즐겨찾기에 없는 극장은
+# 그 칩이 DOM 에 아예 없어서 타임아웃 난다. 중계로 시도했다가 걸렸다.
+# 지금 이 프로필의 칩: 용산아이파크몰, 천호.
 theater:
-  name: CGV 중계
-  site_no: "0131"
-  screen_keywords: ["1관"]      # 중계는 1관/2관/4DX관(3관) 뿐이라 겹치지 않는다
+  name: CGV 천호
+  site_no: "0199"
+  screen_keywords: ["SCREENX"]   # 천호에서 SCREENX 는 2관 하나뿐이라 겹치지 않는다
 
 movie:
-  title_contains: "오크 스트리트"   # 한산한 영화. 용아맥 감시 대상과 겹치지 않게 고름
+  title_contains: "스파이더맨"    # 한산한 영화. 용아맥 감시 대상(오디세이)과 겹치지 않게 고름
 
 dates:
   from: "2026-08-28"

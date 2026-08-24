@@ -191,7 +191,7 @@ def main() -> int:
                 guard.force_check()  # 세션 만료 알림을 다음 턴까지 미루지 않는다
             watcher.invalidate_seats(showtime)
             wait = tracker.record_failure(showtime.key)
-            notifier.failure(f"{exc}\n이 회차는 {wait:.0f}초 뒤에 다시 시도합니다.", showtime)
+            notifier.failure(f"{exc}\n좌석이 바뀌면 다시 시도합니다 (최소 {wait:.0f}초).", showtime)
             return False
         except Exception as exc:  # 예상 못한 오류가 나도 감시는 계속한다
             traceback.print_exc()
