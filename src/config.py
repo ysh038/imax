@@ -108,7 +108,8 @@ class Notify:
 
 @dataclass
 class Config:
-    theater: Theater
+    # 극장 여럿을 동시에 감시할 수 있다. 하나만 쓰면 원소가 하나인 목록이다.
+    theaters: list[Theater]
     movie_title: str
     date_from: str
     date_to: str
@@ -133,14 +134,33 @@ class Config:
     toss_birth: str = ""
 
     @property
+    def theater(self) -> Theater:
+        """극장 하나만 쓰던 시절의 이름. 대표 극장(첫 번째)을 돌려준다.
+
+        예매 화면 조작처럼 '지금 다루는 극장'이 분명한 자리에서는 이걸 쓰지 말고
+        해당 극장을 명시적으로 넘겨야 한다. 두 극장을 감시하는 중에 이걸 쓰면
+        늘 첫 번째 극장을 누르게 된다.
+        """
+        return self.theaters[0]
+
+    @property
     def pays_with_toss(self) -> bool:
         return self.booking.pay_method.strip().lower() == "toss"
 
     def validate(self) -> None:
         if not self.movie_title:
             raise ConfigError("movie.title_contains 가 비어 있습니다")
-        if not self.theater.site_no:
-            raise ConfigError("theater.site_no 가 비어 있습니다")
+        if not self.theaters:
+            raise ConfigError("theater(s) 설정이 비어 있습니다")
+        seen: set[str] = set()
+        for t in self.theaters:
+            if not t.site_no:
+                raise ConfigError(f"'{t.name or '이름 없음'}' 의 site_no 가 비어 있습니다")
+            if not t.name:
+                raise ConfigError(f"site_no {t.site_no} 의 name 이 비어 있습니다")
+            if t.site_no in seen:
+                raise ConfigError(f"극장 site_no 가 중복됩니다: {t.site_no}")
+            seen.add(t.site_no)
         if self.seats.count < 1:
             raise ConfigError("seats.count 는 1 이상이어야 합니다")
         if self.after_min > self.before_min:
@@ -186,6 +206,43 @@ class Config:
             )
 
 
+def _theaters(raw: dict) -> list[Theater]:
+    """theaters 목록을 읽는다. 예전 theater 단수 표기도 그대로 받는다.
+
+    둘 다 있으면 목록을 쓴다. 설정을 옮기다 만 상태에서 단수 쪽이 조용히
+    무시되면 엉뚱한 극장을 보게 되므로, 그때는 알려 준다.
+    """
+    many = raw.get("theaters")
+    one = raw.get("theater")
+    if many and one:
+        raise ConfigError(
+            "theaters 와 theater 가 함께 있습니다. 하나만 남기세요 "
+            "(theaters 목록을 쓰는 편을 권합니다)."
+        )
+    if many is None and one is None:
+        entries = [{}]
+    elif many is not None:
+        if not isinstance(many, list) or not many:
+            raise ConfigError("theaters 는 비어 있지 않은 목록이어야 합니다")
+        entries = many
+    else:
+        entries = [one]
+
+    out = []
+    for e in entries:
+        e = e or {}
+        out.append(
+            Theater(
+                name=e.get("name", "CGV 용산아이파크몰"),
+                site_no=str(e.get("site_no", "0013")),
+                screen_keywords=[
+                    str(k) for k in (e.get("screen_keywords") or ["IMAX", "아이맥스"])
+                ],
+            )
+        )
+    return out
+
+
 def load(path=CONFIG_PATH) -> Config:
     if not path.exists():
         raise ConfigError(
@@ -208,11 +265,7 @@ def load(path=CONFIG_PATH) -> Config:
         interval = [interval, interval]
 
     cfg = Config(
-        theater=Theater(
-            name=t.get("name", "CGV 용산아이파크몰"),
-            site_no=str(t.get("site_no", "0013")),
-            screen_keywords=[str(k) for k in (t.get("screen_keywords") or ["IMAX", "아이맥스"])],
-        ),
+        theaters=_theaters(raw),
         movie_title=str((raw.get("movie") or {}).get("title_contains", "")).strip(),
         date_from=str(d.get("from", "")),
         date_to=str(d.get("to", "")),

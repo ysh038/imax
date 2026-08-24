@@ -1,12 +1,19 @@
 # 이 파일을 config.yaml 로 복사해서 쓰세요. config.yaml은 git에 올라가지 않습니다.
 #   cp config.example.yaml config.yaml
 
-theater:
-  name: CGV 용산아이파크몰
-  site_no: "0013"          # tools/list_theaters.py 로 확인 가능
-  # 상영관명/특별관등급/포맷 중 하나라도 이 단어를 포함해야 대상이 된다.
-  # 용아맥은 scnsNm="IMAX관", tcscnsGradNm="아이맥스", movkndDsplNm="IMAX LASER 2D".
-  screen_keywords: [IMAX, 아이맥스]
+# 극장 여러 곳을 동시에 감시할 수 있다. 번갈아 한 턴씩 보므로 CGV로 나가는
+# 요청 속도는 한 곳만 볼 때와 같고, 각 극장을 보는 주기가 극장 수만큼 길어진다.
+#
+# [주의] 예매 화면의 '즐겨찾는 극장' 칩에 있는 극장만 예매할 수 있다. 등록되지
+# 않은 극장은 감시는 되지만 막상 표가 나면 극장 선택에서 실패한다. 감시할 극장은
+# 전용 Chrome 프로필에서 미리 즐겨찾기에 넣어 두세요.
+theaters:
+  - name: CGV 용산아이파크몰
+    site_no: "0013"
+    screen_keywords: ["IMAX", "아이맥스"]
+  # - name: CGV 천호
+  #   site_no: "0199"
+  #   screen_keywords: ["SCREENX"]
 
 movie:
   title_contains: 오디세이   # movNm 부분 일치

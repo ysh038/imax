@@ -90,10 +90,17 @@ def _minutes(raw: str | None) -> int:
 
 @dataclass
 class Showtime:
-    """회차 하나. raw에 원본 JSON을 그대로 들고 있는다."""
+    """회차 하나. raw에 원본 JSON을 그대로 들고 있는다.
+
+    극장 두 곳 이상을 동시에 감시하면 회차만 봐서는 어느 극장 것인지 알 수 없다.
+    로그도 디스코드도 헷갈리고, 무엇보다 예매할 때 엉뚱한 극장을 누를 수 있다.
+    그래서 회차가 자기 출신 극장을 들고 다닌다.
+    """
 
     raw: dict
     fields: dict
+    site_no: str = ""
+    theater_name: str = ""
 
     def _f(self, key: str, default: Any = "") -> Any:
         return self.raw.get(self.fields.get(key, key), default)
@@ -193,24 +200,32 @@ class Showtime:
 
     @property
     def key(self) -> str:
-        return f"{self.date}-{self.product_no}-{self.start_raw}"
+        """전역에서 유일한 회차 키.
+
+        극장이 다르면 prodNo 가 겹칠 수 있다고 보고 site_no 를 앞에 붙인다.
+        재시도 간격을 관리하는 AttemptTracker 가 극장 간에 이 키를 공유한다.
+        """
+        return f"{self.site_no}-{self.date}-{self.product_no}-{self.start_raw}"
 
     def pretty_date(self) -> str:
         d = self.date
         return f"{d[4:6]}/{d[6:8]}" if len(d) == 8 else d
 
     def __str__(self) -> str:
+        where = f"{self.theater_name} " if self.theater_name else ""
         return (
-            f"{self.pretty_date()} {self.start} {self.movie} "
+            f"{where}{self.pretty_date()} {self.start} {self.movie} "
             f"[{self.screen}] {self.seats_free}/{self.seats_total}석"
         )
 
 
 class CgvApi:
-    def __init__(self, driver, spec: dict | None = None, site_no: str = "0013"):
+    def __init__(self, driver, spec: dict | None = None, site_no: str = "0013",
+                 theater_name: str = ""):
         self.driver = driver
         self.spec = spec or load_spec()
         self.site_no = site_no
+        self.theater_name = theater_name
         self.fields = self.spec.get("showtime_fields", {})
         self._vars = {
             "co_cd": self.spec.get("co_cd", "A420"),
@@ -294,7 +309,15 @@ class CgvApi:
 
     def showtimes(self, scn_ymd: str) -> list[Showtime]:
         data = self.call("showtimes", scn_ymd=scn_ymd) or []
-        return [Showtime(raw=row, fields=self.fields) for row in data]
+        return [
+            Showtime(
+                raw=row,
+                fields=self.fields,
+                site_no=self.site_no,
+                theater_name=self.theater_name,
+            )
+            for row in data
+        ]
 
     def seat_map(self, s: Showtime) -> list[Seat]:
         """회차의 전 좌석 상태. 팔린 자리도 함께 준다.

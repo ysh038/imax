@@ -69,6 +69,8 @@ class Booker:
         # 결제 도중 알림에 쓰려고 들고 있는다
         self._showtime = None
         self._seats = ""
+        # 이번 예매가 어느 극장 것인지. book() 이 매번 채운다.
+        self._theater = None
 
     # ---- DOM 도우미 ----------------------------------------------------
 
@@ -183,8 +185,13 @@ class Booker:
             raise BookingError("로그인이 풀렸습니다. Chrome 창에서 다시 로그인해 주세요.")
 
     def _theater_needle(self) -> str:
-        """극장 선택 목록에는 'CGV' 접두사 없이 '용산아이파크몰'로만 나온다."""
-        return re.sub(r"^\s*CGV\s*", "", self.cfg.theater.name).strip()
+        """극장 선택 목록에는 'CGV' 접두사 없이 '용산아이파크몰'로만 나온다.
+
+        극장을 여럿 감시할 때 cfg.theater(대표 극장)를 보면 늘 첫 번째 극장을
+        누르게 된다. book() 이 받은 이번 회차의 극장을 써야 한다.
+        """
+        theater = self._theater or self.cfg.theater
+        return re.sub(r"^\s*CGV\s*", "", theater.name).strip()
 
     def _click_date(self, ymd: str) -> None:
         """날짜 탭을 누른다. 이미 선택돼 있으면 건너뛴다."""
@@ -791,7 +798,10 @@ class Booker:
         except Exception as exc:
             print(f"      화면 복귀 실패(무시): {exc}", flush=True)
 
-    def book(self, showtime, targets: list[str] | None = None) -> BookingResult:
+    def book(self, showtime, targets: list[str] | None = None, theater=None) -> BookingResult:
+        # 이번 예매가 어느 극장 것인지 먼저 못박는다. 극장을 여럿 감시하면
+        # 회차마다 눌러야 할 극장이 달라진다.
+        self._theater = theater
         # 대기열은 선점 시계가 돌기 전에 빠진다
         self.deadline = 0.0
         self._wait_queue()

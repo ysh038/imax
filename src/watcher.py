@@ -23,11 +23,17 @@ SEAT_CHECKS_PER_POLL = 8  # 한 턴에 좌석맵까지 확인할 회차 수 상�
 
 
 class Watcher:
-    def __init__(self, api: CgvApi, cfg, notifier, session_guard=None):
+    def __init__(self, api: CgvApi, cfg, notifier, session_guard=None, theater=None):
         self.api = api
         self.cfg = cfg
         self.notify = notifier
         self.session = session_guard
+        # 감시자 하나가 극장 하나를 맡는다. 상영관 키워드가 극장마다 다르므로
+        # cfg.theater(대표 극장)가 아니라 자기 극장을 봐야 한다.
+        self.theater = theater or cfg.theater
+        # 극장이 여럿이면 감시자마다 생존 신고를 보내 시끄럽다. MultiWatcher 가
+        # 이걸 끄고 한 번에 묶어 보낸다.
+        self.heartbeat_enabled = True
 
         self.wanted_dates = set(daterange(cfg.date_from, cfg.date_to))
         if cfg.only_dates:
@@ -81,7 +87,7 @@ class Watcher:
         if cfg.movie_title and cfg.movie_title not in s.movie:
             return False
 
-        keywords = cfg.theater.screen_keywords
+        keywords = self.theater.screen_keywords
         if keywords:
             haystack = f"{s.screen} {s.special_grade} {s.fmt}".upper()
             if not any(k.upper() in haystack for k in keywords):
@@ -265,58 +271,79 @@ class Watcher:
         )
         return self._backoff
 
+    def status_line(self) -> str:
+        """생존 신고에 넣을 한 줄. 극장이 여럿일 때 묶어 쓴다."""
+        watching = ", ".join(self.active_dates) or "(조건에 맞는 회차 없음)"
+        return (
+            f"**{self.theater.name}** — {self._tick}턴 확인함\n"
+            f"감시 중인 날짜: {watching}\n"
+            f"예매 열린 날짜: {len(self.known_open_dates)}개"
+        )
+
+    def login_line(self) -> str:
+        if self.session is None:
+            return ""
+        return "\n로그인: 정상" if self.session.logged_in else "\n로그인: **끊김 (재로그인 필요)**"
+
     def _maybe_heartbeat(self) -> None:
+        if not self.heartbeat_enabled:
+            return
         every = self.cfg.notify.heartbeat_min
         if not every:
             return
         if time.time() - self._last_heartbeat < every * 60:
             return
         self._last_heartbeat = time.time()
-        watching = ", ".join(self.active_dates) or "(조건에 맞는 회차 없음)"
-        login = "" if self.session is None else (
-            "\n로그인: 정상" if self.session.logged_in else "\n로그인: **끊김 (재로그인 필요)**"
-        )
-        self.notify.heartbeat(
-            f"{self._tick}턴 확인함\n감시 중인 날짜: {watching}\n"
-            f"예매 열린 날짜: {len(self.known_open_dates)}개{login}"
-        )
+        self.notify.heartbeat(self.status_line() + self.login_line())
 
     # ---- 메인 루프 -----------------------------------------------------
+
+    def step(self, on_hit) -> bool:
+        """한 턴만 돈다. 끝내야 하면 True.
+
+        run() 에서 떼어낸 것이다. 극장을 여럿 감시할 때 MultiWatcher 가 감시자
+        들을 번갈아 한 턴씩 돌리려면 루프 밖에서 한 턴을 부를 수 있어야 한다.
+        예외 처리와 대기 계산은 예전 run() 과 같게 유지한다.
+        """
+        try:
+            can_book = self.session.tick() if self.session else True
+            bookable, fresh = self.poll_once()
+
+            if fresh:
+                self.notify.showtime_open(fresh)
+
+            # 로그아웃 상태면 시도해봐야 로그인 안내창만 뜬다. 감시는 계속한다.
+            if can_book:
+                for s in sorted(
+                    bookable, key=lambda x: (-x.seats_free, x.date, x.start_minutes)
+                ):
+                    if on_hit(s):
+                        return True
+            elif bookable:
+                print(
+                    f"  [로그인 끊김] 예매 가능 회차 {len(bookable)}건을 찾았지만 시도하지 못함",
+                    flush=True,
+                )
+
+            self._maybe_heartbeat()
+
+        except QueueWaitError as exc:
+            # 예전에는 여기서 12초 자고 인터벌 수면을 건너뛰었다. 백오프로 옮기면
+            # 호출자가 자는 시간이 그대로 12초가 되어 결과가 같다.
+            print(f"  [대기열] API가 대기 페이지를 돌려줬습니다. 잠시 쉽니다. {exc}", flush=True)
+            self._backoff = max(self._backoff, 12.0)
+        except BlockedError as exc:
+            wait = self._raise_backoff()
+            self.notify.blocked(str(exc), wait)
+        except CgvError as exc:
+            print(f"  [API 오류] {exc}", flush=True)
+            self._backoff = max(self._backoff, 15.0)
+
+        return False
 
     def run(self, on_hit) -> None:
         """on_hit(showtime) -> True 면 루프를 끝낸다."""
         while True:
-            try:
-                can_book = self.session.tick() if self.session else True
-                bookable, fresh = self.poll_once()
-
-                if fresh:
-                    self.notify.showtime_open(fresh)
-
-                # 로그아웃 상태면 시도해봐야 로그인 안내창만 뜬다. 감시는 계속한다.
-                if can_book:
-                    for s in sorted(
-                        bookable, key=lambda x: (-x.seats_free, x.date, x.start_minutes)
-                    ):
-                        if on_hit(s):
-                            return
-                elif bookable:
-                    print(
-                        f"  [로그인 끊김] 예매 가능 회차 {len(bookable)}건을 찾았지만 시도하지 못함",
-                        flush=True,
-                    )
-
-                self._maybe_heartbeat()
-
-            except QueueWaitError as exc:
-                print(f"  [대기열] API가 대기 페이지를 돌려줬습니다. 잠시 쉽니다. {exc}", flush=True)
-                time.sleep(12)
-                continue
-            except BlockedError as exc:
-                wait = self._raise_backoff()
-                self.notify.blocked(str(exc), wait)
-            except CgvError as exc:
-                print(f"  [API 오류] {exc}", flush=True)
-                self._backoff = max(self._backoff, 15.0)
-
+            if self.step(on_hit):
+                return
             time.sleep(self.sleep_interval())

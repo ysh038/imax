@@ -22,6 +22,7 @@ from selenium.common.exceptions import WebDriverException
 from src import browser, cgv, config
 from src.booker import Booker, BookingError, BookingResult, NoSelectableSeats
 from src.notify import Notifier
+from src.multi import MultiWatcher
 from src.renew import SessionRenewer
 from src.session import SessionGuard
 from src.watcher import Watcher
@@ -71,21 +72,32 @@ def build_notifier(cfg, quiet: bool = False) -> Notifier:
     )
 
 
-def cmd_list(api: cgv.CgvApi, cfg, notifier) -> int:
-    watcher = Watcher(api, cfg, notifier)
-    dates = watcher.refresh_open_dates()
-    print(f"예매 열린 날짜 {len(watcher.known_open_dates)}개 (이번에 새로 열린 날짜 {len(dates)}개)")
-
+def cmd_list(watchers, cfg, notifier) -> int:
     total = 0
-    for ymd in sorted(watcher.known_open_dates):
-        hits = watcher.scan_date(ymd)
-        for s in hits:
-            total += 1
-            held = f" (+{s.held_seats}석 선점중)" if s.held_seats else ""
-            print(f"  {s}{held}")
-    if not total:
-        print("  조건에 맞는 회차가 아직 없습니다. 오픈을 기다리면 됩니다.")
+    for w in watchers:
+        print(f"\n[{w.theater.name}]")
+        w.refresh_open_dates()
+        print(f"  예매 열린 날짜 {len(w.known_open_dates)}개")
+        found = 0
+        for ymd in sorted(w.known_open_dates):
+            for s in w.scan_date(ymd):
+                found += 1
+                held = f" (+{s.held_seats}석 선점중)" if s.held_seats else ""
+                print(f"    {s}{held}")
+        if not found:
+            print("    조건에 맞는 회차가 아직 없습니다. 오픈을 기다리면 됩니다.")
+        total += found
+    print(f"\n합계 {total}건")
     return 0
+
+
+def build_watchers(driver, cfg, notifier, guard=None):
+    """극장마다 API 클라이언트와 감시자를 하나씩 만든다."""
+    watchers = []
+    for t in cfg.theaters:
+        api = cgv.CgvApi(driver, site_no=t.site_no, theater_name=t.name)
+        watchers.append(Watcher(api, cfg, notifier, session_guard=guard, theater=t))
+    return watchers
 
 
 def main() -> int:
@@ -131,11 +143,12 @@ def main() -> int:
     browser.launch_chrome(port=args.port, url=browser.BOOKING_URL)
     driver = browser.attach_driver(args.port)
 
-    api = cgv.CgvApi(driver, site_no=cfg.theater.site_no)
+    # 세션 확인·갱신은 극장과 무관하므로 대표 극장 하나로 충분하다
+    api = cgv.CgvApi(driver, site_no=cfg.theater.site_no, theater_name=cfg.theater.name)
 
     # 조회는 비로그인으로도 되므로 --list는 로그인을 기다리지 않는다
     if args.list:
-        return cmd_list(api, cfg, notifier)
+        return cmd_list(build_watchers(driver, cfg, notifier), cfg, notifier)
 
     browser.wait_for_login(driver, api.is_logged_in)
 
@@ -149,18 +162,23 @@ def main() -> int:
         confirm_times=cfg.session.confirm_times,
         renewer=SessionRenewer(api, browser.CGV_HOME) if cfg.session.auto_renew else None,
     )
-    watcher = Watcher(api, cfg, notifier, session_guard=guard)
+    watchers = build_watchers(driver, cfg, notifier, guard)
+    by_site = {w.theater.site_no: w for w in watchers}
+    driver_loop = MultiWatcher(watchers, cfg, notifier)
 
     mode = "결제 직전까지 (dry-run)" if args.dry_run else (
         "자동 결제까지" if cfg.booking.auto_pay else "결제 직전까지"
     )
     lo, hi = cfg.polling.interval_sec
     notifier.startup(
-        f"{cfg.theater.name} / {cfg.movie_title} / "
-        f"{'·'.join(cfg.theater.screen_keywords)}\n"
+        "\n".join(
+            f"{t.name} / {'·'.join(t.screen_keywords)}" for t in cfg.theaters
+        )
+        + f"\n영화: {cfg.movie_title}\n"
         f"{cfg.date_from} ~ {cfg.date_to}, {cfg.seats.count}석\n"
-        f"동작: {mode} / 확인 주기 {lo:.0f}~{hi:.0f}초\n"
-        f"로그인 세션도 {cfg.session.check_every_sec:.0f}초마다 확인합니다"
+        f"동작: {mode} / 확인 주기 {lo:.0f}~{hi:.0f}초"
+        + (f" (극장 {len(cfg.theaters)}곳을 번갈아 봅니다)\n" if len(cfg.theaters) > 1 else "\n")
+        +         f"로그인 세션도 {cfg.session.check_every_sec:.0f}초마다 확인합니다"
         + (", 끊기면 스스로 갱신해 보고 안 되면 알립니다." if cfg.session.auto_renew
            else ", 끊기면 알립니다.")
     )
@@ -168,16 +186,23 @@ def main() -> int:
     successes = 0
     tracker = AttemptTracker()
 
-    def on_hit(showtime) -> bool:
+    def on_hit(showtime, theater) -> bool:
         nonlocal successes
 
         if not tracker.may_attempt(showtime.key):
             return False
 
+        # 회차가 들고 온 site_no 로 주인 감시자를 찾는다. 목록 순서나 클로저에
+        # 기대지 않는다. 엉뚱한 감시자의 targets 를 쓰면 다른 극장 좌석을 누른다.
+        watcher = by_site.get(showtime.site_no)
+        if watcher is None:
+            # 여기 오면 회차에 극장 표시가 안 붙은 것이다. 감시를 죽이지는 않는다.
+            print(f"  [무시] 극장을 알 수 없는 회차입니다: {showtime}", flush=True)
+            return False
         targets = watcher.targets.get(showtime.key) or []
         notifier.seat_found(showtime, len(targets) or showtime.seats_free)
         try:
-            result: BookingResult = booker.book(showtime, targets)
+            result: BookingResult = booker.book(showtime, targets, theater=theater)
         except NoSelectableSeats as exc:
             # 좌석맵 확인과 실제 진입 사이에 남이 채갔거나, 조건(연석·선호열)이 너무 좁다.
             watcher.invalidate_seats(showtime)
@@ -216,7 +241,7 @@ def main() -> int:
         return successes >= cfg.booking.max_bookings
 
     try:
-        watcher.run(on_hit)
+        driver_loop.run(on_hit)
     except KeyboardInterrupt:
         print("\n중단했습니다.")
         return 130

@@ -74,8 +74,8 @@ Entering Sleep 이 있으면 봇도 멈춘것
 
 | 항목 | 설명 |
 | --- | --- |
-| `theater.site_no` | 극장 코드. 용산아이파크몰은 `0013` |
-| `theater.screen_keywords` | 상영관명·특별관등급·포맷 중 하나라도 포함해야 하는 단어 |
+| `theaters[].site_no` | 극장 코드. 용산아이파크몰은 `0013`, 천호는 `0199` |
+| `theaters[].screen_keywords` | 상영관명·특별관등급·포맷 중 하나라도 포함해야 하는 단어. 극장마다 다르게 줄 수 있다 |
 | `movie.title_contains` | 영화 제목 부분 일치 |
 | `showtimes.after` / `before` | CGV 표기 그대로. 심야는 24시를 넘어간다 (`25:30` = 새벽 1시 반) |
 | `showtimes.days` | 볼 요일. `fri, sat, sun` 이면 주말만 |
@@ -87,6 +87,42 @@ Entering Sleep 이 있으면 봇도 멈춘것
 | `booking.pay_method` | CGV 결제 화면의 결제수단 이름 그대로 (`카카오페이`, `toss`, `CJ PAY` 등) |
 | `booking.max_price_krw` | 총액이 넘으면 결제하지 않고 알림 |
 | `booking.queue_timeout_sec` | 오픈 대기열을 기다릴 상한(초). 좌석 선점 시간과 별개 |
+
+## 극장 여러 곳을 동시에 보기
+
+`theaters` 에 여러 극장을 적으면 한 프로세스가 번갈아 감시한다. 극장마다
+`screen_keywords` 를 따로 줄 수 있어서, 용산은 IMAX만 천호는 SCREENX만 보는 식이
+가능하다. 예전처럼 `theater:` 단수로 적어도 그대로 동작한다 (둘을 함께 적으면
+설정 오류로 잡는다).
+
+```yaml
+theaters:
+  - name: CGV 용산아이파크몰
+    site_no: "0013"
+    screen_keywords: ["IMAX", "아이맥스"]
+  - name: CGV 천호
+    site_no: "0199"
+    screen_keywords: ["SCREENX"]
+```
+
+**스레드는 쓰지 않는다.** 브라우저가 하나뿐이라 예매는 어차피 한 번에 하나씩만
+할 수 있고, 두 곳이 동시에 예매 화면을 조작하면 서로를 밟는다. 감시자를 극장마다
+하나씩 두고 `MultiWatcher` 가 번갈아 한 턴씩 돌린다.
+
+**요청 속도는 그대로다.** 한 턴 돌 때마다 쉬므로 CGV로 나가는 요청 수는 한 곳만
+볼 때와 같다. 대신 각 극장을 보는 주기가 극장 수만큼 길어진다. 차단당하면
+아무것도 못 하므로 이쪽을 택했다.
+
+**차단은 전파된다.** 차단은 IP 단위라 한 극장에서 걸리면 다른 극장도 마찬가지다.
+한 감시자가 백오프에 들어가면 나머지에게도 같은 백오프를 물린다.
+
+**회차는 자기 극장을 들고 다닌다.** `Showtime.site_no` 와 `theater_name` 이다.
+회차 키에도 `site_no` 가 들어가서 극장 간에 겹치지 않고, 예매할 때는 그 회차의
+극장을 눌러야지 대표 극장(`cfg.theater`)을 누르면 안 된다. 로그와 디스코드
+메시지에도 극장 이름이 함께 나온다.
+
+**즐겨찾기 등록은 극장마다 필요하다.** 감시는 API 로 하지만 예매는 극장 칩을
+눌러야 하므로, 감시하는 극장은 전부 그 프로필의 즐겨찾기에 있어야 한다.
 
 ## 결제는 토스로 한다
 
@@ -208,6 +244,7 @@ Cloudflare가 요청 빈도를 보고 있어서 밀리초 폴링은 IP 차단으
 ```
 .venv/bin/python run.py --config config.test.yaml --list      # 조건 판정만
 .venv/bin/python run.py --config config.test.yaml --dry-run   # 결제 직전까지
+.venv/bin/python -m unittest discover -s tests                # 단위 테스트
 ```
 
 `--config`로 실제 `config.yaml`은 건드리지 않는다.
