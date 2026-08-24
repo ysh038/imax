@@ -1,0 +1,75 @@
+# 예행연습용 설정. 실제 예매 설정(config.yaml)은 그대로 두고 이것만 바꿔 쓴다.
+#
+#   .venv/bin/python run.py --config config.test.yaml --list
+#   .venv/bin/python run.py --config config.test.yaml --dry-run
+#
+# 목적은 "조건 판정 -> 회차 진입 -> 인원 선택 -> 좌석 선택 -> 결제 직전"까지의
+# 흐름이 실제로 도는지 눈으로 보는 것이다. 용아맥 IMAX는 늘 매진이라 이 경로가
+# 좀처럼 안 돌아본다. 그래서 한산한 극장·영화로 바꿔 같은 조건을 태운다.
+#
+# [안전장치 두 겹] booking.auto_pay 를 false 로 두었고, --dry-run 도 같이 쓴다.
+# 둘 중 하나만 있어도 결제 버튼 앞에서 멈춘다. 절대 auto_pay 를 켜지 말 것.
+
+theater:
+  name: CGV 중계
+  site_no: "0131"
+  screen_keywords: ["1관"]      # 중계는 1관/2관/4DX관(3관) 뿐이라 겹치지 않는다
+
+movie:
+  title_contains: "오크 스트리트"   # 한산한 영화. 용아맥 감시 대상과 겹치지 않게 고름
+
+dates:
+  from: "2026-08-28"
+  to: "2026-08-30"
+  wait_for_open: true
+
+# --- 여기부터는 실제 설정과 똑같이 둔다. 검증 대상이기 때문이다 ---
+showtimes:
+  after: "00:00"
+  before: "28:00"
+  days: [fri, sat, sun]
+  friday_after: "21:00"
+  weekdays_only: false
+  min_lead_hours: 5
+  only_dates: []
+
+seats:
+  count: 2
+  min_count: 1
+  adjacent: true
+  min_row: E
+  center_ratio: 0.5
+  prefer_rows: [H, I, G, J, F, K]
+  avoid_rows: []
+  prefer_center: true
+
+polling:
+  interval_sec: [4, 9]
+  backoff_start_sec: 60
+  backoff_max_sec: 900
+  burst_at: ""
+  burst_interval_sec: 1
+  burst_window_sec: 120
+
+booking:
+  auto_pay: false            # [중요] 예행연습에서는 절대 켜지 않는다
+  pay_method: ""
+  max_price_krw: 100000
+  max_bookings: 1
+  hold_timeout_sec: 540
+  queue_timeout_sec: 1800
+
+session:
+  check_every_sec: 60
+  keepalive_every_sec: 600
+  renotify_every_sec: 1800
+  confirm_times: 2
+  auto_renew: true
+
+notify:
+  on_showtime_open: true
+  on_seat_found: true
+  on_success: true
+  on_failure: true
+  on_blocked: true
+  heartbeat_min: 60

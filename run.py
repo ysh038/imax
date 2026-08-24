@@ -15,6 +15,7 @@ import argparse
 import sys
 import time
 import traceback
+from pathlib import Path
 
 from selenium.common.exceptions import WebDriverException
 
@@ -94,10 +95,18 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=browser.DEFAULT_PORT)
     parser.add_argument("--quiet", action="store_true", help="콘솔 로그 최소화")
     parser.add_argument("--test-notify", action="store_true", help="디스코드 알림만 시험 발송")
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help="쓸 설정 파일. 기본은 config.yaml. 실제 설정을 건드리지 않고 "
+             "다른 극장·영화로 예행연습할 때 쓴다 (config.test.yaml 참고)",
+    )
     args = parser.parse_args()
 
     try:
-        cfg = config.load()
+        cfg = config.load(Path(args.config)) if args.config else config.load()
+        if args.config:
+            print(f"[설정] {args.config}")
         if not (args.dry_run or args.list or args.test_notify):
             cfg.require_payment_ready()
     except config.ConfigError as exc:
