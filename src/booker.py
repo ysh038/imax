@@ -384,8 +384,13 @@ class Booker:
             )
         return seats
 
-    def _verify_selected(self, labels: list[str]) -> None:
-        """클릭이 실제로 먹었는지 선택 표시 클래스로 확인한다."""
+    def _verify_selected(self, labels: list[str], timeout: float = 8.0) -> None:
+        """클릭이 실제로 먹었는지 선택 표시 클래스로 확인한다.
+
+        좌석 선택은 즉시 반영되지 않는다. CGV가 서버에 자리를 잡아 두고 응답이
+        와야 표시가 바뀐다. 클릭 직후 한 번만 보고 실패로 단정하면 멀쩡히
+        진행 중인 선택을 남이 채간 것으로 오해한다. 다 켜질 때까지 기다린다.
+        """
         cfg = self.sel["seatmap"]
         js = """
         const [sel, mark, labels] = arguments;
@@ -395,11 +400,19 @@ class Booker:
         }
         return labels.filter(l => !hit.has(l));
         """
-        missing = self.driver.execute_script(
-            js, cfg["seat"], cfg["selected_marker"], labels
-        )
-        if missing:
-            raise SeatTakenError(f"좌석 선택이 반영되지 않았습니다: {', '.join(missing)}")
+        deadline = time.time() + timeout
+        while True:
+            missing = self.driver.execute_script(
+                js, cfg["seat"], cfg["selected_marker"], labels
+            )
+            if not missing:
+                return
+            if time.time() >= deadline:
+                raise SeatTakenError(
+                    f"좌석 선택이 반영되지 않았습니다: {', '.join(missing)} "
+                    f"({timeout:.0f}초 기다림)"
+                )
+            time.sleep(0.3)
 
     def _click_seat(self, label: str) -> None:
         """본지도의 좌석을 누른다.
