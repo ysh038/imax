@@ -137,7 +137,21 @@ def main() -> int:
     if args.list:
         return cmd_list(api, cfg, notifier)
 
-    browser.wait_for_login(driver, api.is_logged_in)
+    # 갱신 사다리를 로그인 대기보다 먼저 만든다. 시작 시점에 토큰만 상해 있는
+    # 경우가 잦은데, 그걸 사람이 손으로 풀게 할 이유가 없다. 감시 루프의
+    # SessionGuard 도 같은 객체를 그대로 쓴다.
+    renewer = SessionRenewer(api, browser.CGV_HOME) if cfg.session.auto_renew else None
+    browser.wait_for_login(
+        driver,
+        api.is_logged_in,
+        renewer=renewer,
+        on_wait=lambda: notifier.send(
+            "로그인이 필요합니다",
+            "자동 갱신으로 되살리지 못했습니다.\n"
+            "열려 있는 Chrome 창에서 CGV에 로그인해 주세요. 그때까지 감시를 시작하지 못합니다.",
+            mention=True,
+        ),
+    )
 
     booker = Booker(driver, cfg, notifier, dry_run=args.dry_run)
     guard = SessionGuard(
@@ -147,7 +161,7 @@ def main() -> int:
         keepalive_every_sec=cfg.session.keepalive_every_sec or float("inf"),
         renotify_every_sec=cfg.session.renotify_every_sec,
         confirm_times=cfg.session.confirm_times,
-        renewer=SessionRenewer(api, browser.CGV_HOME) if cfg.session.auto_renew else None,
+        renewer=renewer,
     )
     watcher = Watcher(api, cfg, notifier, session_guard=guard)
 

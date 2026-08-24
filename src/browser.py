@@ -106,31 +106,64 @@ def screenshot(driver: webdriver.Chrome, name: str) -> Path:
     return path
 
 
-def wait_for_login(driver: webdriver.Chrome, is_logged_in, poll_sec: float = 3.0) -> None:
+def wait_for_login(
+    driver: webdriver.Chrome,
+    is_logged_in,
+    poll_sec: float = 3.0,
+    renewer=None,
+    on_wait=None,
+) -> None:
     """로그인될 때까지 기다린다. 판정은 호출자가 넘긴 함수에 맡긴다.
 
-    CGV는 checkScrenUrlValid 응답의 custLginYn 으로 로그인 여부를 알려주므로
-    DOM을 뒤지는 것보다 그쪽이 정확하다.
+    [시작 시점 자동 갱신] 봇을 띄웠는데 로그아웃으로 보이는 경우, 대개는 세션이
+    죽은 게 아니라 accessToken 이 상한 것이다. refresh_token 은 1년짜리라 페이지만
+    다시 띄우면 SPA 가 알아서 재발급받는다. 봇이 쉬는 동안에는 keepalive 가 안
+    나가므로 재시작할 때마다, 맥이 자다 깰 때마다 걸릴 수 있다.
+
+    감시 루프에는 SessionGuard 가 갱신 사다리를 물고 있지만 그건 이 함수를 지나야
+    만들어진다. 그래서 여기서도 같은 사다리(renewer)를 한 번 태운다. 사람을 부르는
+    것은 그게 실패한 뒤다.
+
+    [알림] 사람을 기다리게 되면 on_wait 을 부른다. 이 단계는 SessionGuard 이전이라
+    아무 알림도 안 나가고 터미널만 조용히 멈춰 있었다. 무인 운용에서는 멈춘 줄도
+    모른다.
     """
     if driver.current_url.rstrip("/") in ("", "about:blank", "data:,"):
         driver.get(CGV_HOME)
         time.sleep(2)
 
-    # 판정 함수는 네트워크가 튀면 예외를 던진다. 첫 확인이 실패했다고
-    # 죽을 이유는 없고, 아래 폴링 루프가 알아서 다시 본다.
-    try:
-        if is_logged_in():
+    def logged_in() -> bool:
+        # 판정 함수는 네트워크가 튀면 예외를 던진다. 확인 실패는 로그아웃이
+        # 아니지만, 여기서는 어차피 기다리는 쪽이 안전하다.
+        try:
+            return bool(is_logged_in())
+        except Exception as exc:
+            print(f"[로그인 확인] 확인 실패, 계속 시도합니다: {exc}")
+            return False
+
+    if logged_in():
+        return
+
+    if renewer is not None:
+        try:
+            how = renewer.renew()
+        except Exception as exc:
+            print(f"[로그인 확인] 자동 갱신 중 오류(무시): {exc}")
+            how = None
+        if how:
+            print(f"[로그인 확인] {how}(으)로 세션을 되살렸습니다. 사람 손이 필요 없습니다.\n")
             return
-    except Exception as exc:
-        print(f"[로그인 확인] 첫 확인 실패, 계속 시도합니다: {exc}")
 
     print("\n[로그인 필요] 열려 있는 Chrome 창에서 CGV에 로그인해 주세요.")
     print("             로그인하면 자동으로 감지하고 이어서 진행합니다. (Ctrl+C로 중단)\n")
+    if on_wait is not None:
+        try:
+            on_wait()
+        except Exception as exc:  # 알림 실패로 봇을 죽이지는 않는다
+            print(f"[알림 실패] {exc}")
+
     while True:
         time.sleep(poll_sec)
-        try:
-            if is_logged_in():
-                break
-        except Exception:
-            continue
+        if logged_in():
+            break
     print("[로그인 확인] 세션이 전용 프로필에 저장되어 다음 실행부터 재사용됩니다.\n")
