@@ -84,6 +84,7 @@ class Booking:
     max_bookings: int = 1
     hold_timeout_sec: int = 540
     queue_timeout_sec: int = 1800
+    render_timeout_sec: float = 180.0
 
 
 @dataclass
@@ -249,6 +250,7 @@ def load(path=CONFIG_PATH) -> Config:
             max_bookings=int(b.get("max_bookings", 1)),
             hold_timeout_sec=int(b.get("hold_timeout_sec", 540)),
             queue_timeout_sec=int(b.get("queue_timeout_sec", 1800)),
+            render_timeout_sec=float(b.get("render_timeout_sec", 180.0)),
         ),
         notify=Notify(
             on_showtime_open=bool(n.get("on_showtime_open", True)),

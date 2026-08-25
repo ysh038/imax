@@ -87,6 +87,7 @@ Entering Sleep 이 있으면 봇도 멈춘것
 | `booking.pay_method` | CGV 결제 화면의 결제수단 이름 그대로 (`카카오페이`, `toss`, `CJ PAY` 등) |
 | `booking.max_price_krw` | 총액이 넘으면 결제하지 않고 알림 |
 | `booking.queue_timeout_sec` | 오픈 대기열을 기다릴 상한(초). 좌석 선점 시간과 별개 |
+| `booking.render_timeout_sec` | 대기열이 풀린 직후에도 화면이 안 뜨는 지연을 기다릴 상한(초, 기본 180). 날짜/회차/인원 버튼에 적용되고, 기다린 시간은 좌석 선점 시간에서 빼지 않는다 |
 
 ## 결제는 토스로 한다
 

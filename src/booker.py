@@ -153,16 +153,26 @@ class Booker:
         ok 를 안 주면 반환값이 참인지(=truthy)로 성공을 판단한다(회차 버튼 클릭
         같은 경우). ok 를 주면 그 값들 중 하나가 나와야 성공이다(날짜 탭처럼
         '이미 선택됨'도 성공으로 쳐야 하는 경우).
+
+        [선점 시간 보호] 여기서 기다린 시간은 좌석 선점 제한(self.deadline)에서
+        빼지 않고 그만큼 늘려 준다. _wait_queue 가 이미 그렇게 한다. 그렇지
+        않으면 congestion 이 3분 걸렸을 때 좌석 선택·결제에 쓸 시간이 3분
+        그대로 줄어든다. 렌더링 지연은 사용자 잘못이 아니므로 그 값을 깎지
+        않는다.
         """
-        end = time.time() + timeout
+        start = time.time()
+        end = start + timeout
         outcome = None
         first = True
         while True:
             outcome = self.driver.execute_script(js, *args)
             success = (outcome in ok) if ok is not None else bool(outcome)
             if success:
+                elapsed = time.time() - start
                 if not first:
-                    print(f"      {label}: {timeout - (end - time.time()):.1f}초 뒤 나타남", flush=True)
+                    print(f"      {label}: {elapsed:.1f}초 뒤 나타남", flush=True)
+                    if self.deadline:
+                        self.deadline += elapsed
                 return outcome
             if time.time() >= end:
                 return outcome
@@ -217,8 +227,9 @@ class Booker:
         """극장 선택 목록에는 'CGV' 접두사 없이 '용산아이파크몰'로만 나온다."""
         return re.sub(r"^\s*CGV\s*", "", self.cfg.theater.name).strip()
 
-    def _click_date(self, ymd: str, timeout: float = 12.0) -> None:
+    def _click_date(self, ymd: str, timeout: float | None = None) -> None:
         """날짜 탭을 누른다. 이미 선택돼 있으면 건너뛴다."""
+        timeout = self.cfg.booking.render_timeout_sec if timeout is None else timeout
         cfg = self.sel["date_tab"]
         day = str(int(ymd[6:8]))
         js = """
@@ -245,8 +256,9 @@ class Booker:
         if outcome == "clicked":
             time.sleep(2.5)
 
-    def _click_matching_showtime(self, showtime, timeout: float = 12.0) -> None:
+    def _click_matching_showtime(self, showtime, timeout: float | None = None) -> None:
         """시작 시각과 상영관 이름이 모두 맞는 회차 버튼을 누른다."""
+        timeout = self.cfg.booking.render_timeout_sec if timeout is None else timeout
         js = """
         const want = arguments[0], screen = arguments[1], sel = arguments[2];
         const btns = Array.from(document.querySelectorAll(sel));
@@ -274,9 +286,10 @@ class Booker:
             )
         time.sleep(3.0)
 
-    def select_visitor_count(self, count: int, timeout: float = 12.0) -> None:
+    def select_visitor_count(self, count: int, timeout: float | None = None) -> None:
         """'일반' 그룹에서 인원 수 버튼을 누르고 좌석 모달을 연다."""
         self._check_deadline("인원 선택")
+        timeout = self.cfg.booking.render_timeout_sec if timeout is None else timeout
         vc = self.sel["visitor_count"]
         js = """
         const [groupSel, labelSel, btnSel, want] = arguments;
