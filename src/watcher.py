@@ -106,6 +106,9 @@ class Watcher:
                 return False
             if wd == 4 and cfg.friday_after_min is not None and start < cfg.friday_after_min:
                 return False
+            # 다음날 출근을 감안해 일요일은 이 시각 이전 회차만 본다.
+            if wd == 6 and cfg.sunday_before_min is not None and start >= cfg.sunday_before_min:
+                return False
 
         return True
 

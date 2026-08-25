@@ -121,6 +121,9 @@ class Config:
     days: list[int]
     # 금요일에만 적용. None이면 금요일도 after/before만 본다.
     friday_after_min: int | None
+    # 일요일에만 적용. None이면 일요일도 after/before만 본다.
+    # 다음날 출근을 감안해 일요일은 이 시각 이전 회차만 본다.
+    sunday_before_min: int | None
     # 지금부터 이 시간 안에 시작하는 회차는 아예 안 잡는다. 0이면 제한 없음.
     min_lead_hours: float
     only_dates: list[str]
@@ -148,6 +151,10 @@ class Config:
             raise ConfigError("showtimes.after 가 before 보다 늦습니다")
         if self.friday_after_min is not None and not (0 <= self.friday_after_min <= self.before_min):
             raise ConfigError("showtimes.friday_after 가 before 보다 늦습니다")
+        if self.sunday_before_min is not None and not (
+            self.after_min <= self.sunday_before_min <= self.before_min
+        ):
+            raise ConfigError("showtimes.sunday_before 는 after~before 사이여야 합니다")
         if self.days and any(d < 0 or d > 6 for d in self.days):
             raise ConfigError("showtimes.days 는 mon~sun (또는 월~일) 이어야 합니다")
         lo, hi = self.polling.interval_sec
@@ -223,6 +230,7 @@ def load(path=CONFIG_PATH) -> Config:
         weekdays_only=bool(st.get("weekdays_only", False)),
         days=_days(st.get("days") or []),
         friday_after_min=_minutes(st["friday_after"]) if st.get("friday_after") else None,
+        sunday_before_min=_minutes(st["sunday_before"]) if st.get("sunday_before") else None,
         min_lead_hours=float(st.get("min_lead_hours", 0)),
         only_dates=[str(x).replace("-", "") for x in (st.get("only_dates") or [])],
         seats=Seats(

@@ -80,6 +80,7 @@ Entering Sleep 이 있으면 봇도 멈춘것
 | `showtimes.after` / `before` | CGV 표기 그대로. 심야는 24시를 넘어간다 (`25:30` = 새벽 1시 반) |
 | `showtimes.days` | 볼 요일. `fri, sat, sun` 이면 주말만 |
 | `showtimes.friday_after` | 금요일은 이 시각 이후만 (예: `21:00`). 토·일에는 적용 안 됨 |
+| `showtimes.sunday_before` | 일요일은 이 시각 이전만 (예: `18:00`). 다음날 출근을 감안한 컷오프. 금·토에는 적용 안 됨 |
 | `showtimes.min_lead_hours` | 지금부터 이 시간 안에 시작하는 회차는 안 잡는다 (기본 `5`). `0`이면 제한 없음 |
 | `seats.prefer_rows` | 앞에 적은 행부터 우선 |
 | `polling.interval_sec` | `[하한, 상한]` 사이 랜덤. 1초 미만은 설정 단계에서 막는다 |
