@@ -139,6 +139,37 @@ class Booker:
         self._wait_queue()
         return spec
 
+    def _js_retry(self, js: str, args: tuple, ok: set[str] | None, timeout: float,
+                  label: str) -> str | None:
+        """단발 JS 클릭을 폴링 재시도로 감싼다.
+
+        대기열이 풀린 직후에는 화면이 아직 안 나온 채로 반응한다. CGV가 대기열을
+        풀어도 몰린 사람이 한꺼번에 들어오면 그 다음 화면(날짜/회차/인원 버튼)이
+        렌더링되기까지 눈에 안 보이는 지연이 또 생긴다. 여기서 한 번만 물어보면
+        '자리가 없다'와 '아직 안 떴다'를 구분하지 못하고 후자를 전자로 오판해
+        회차를 포기하고 홈으로 돌아가 버린다. _click/_find 는 이미 폴링하는데
+        날짜/회차/인원 버튼 세 곳만 단발이었다.
+
+        ok 를 안 주면 반환값이 참인지(=truthy)로 성공을 판단한다(회차 버튼 클릭
+        같은 경우). ok 를 주면 그 값들 중 하나가 나와야 성공이다(날짜 탭처럼
+        '이미 선택됨'도 성공으로 쳐야 하는 경우).
+        """
+        end = time.time() + timeout
+        outcome = None
+        first = True
+        while True:
+            outcome = self.driver.execute_script(js, *args)
+            success = (outcome in ok) if ok is not None else bool(outcome)
+            if success:
+                if not first:
+                    print(f"      {label}: {timeout - (end - time.time()):.1f}초 뒤 나타남", flush=True)
+                return outcome
+            if time.time() >= end:
+                return outcome
+            if first:
+                first = False
+            time.sleep(0.3)
+
     def _try_click(self, candidates: list[str], timeout: float = 2.0, **fmt) -> bool:
         try:
             self._click(candidates, timeout=timeout, **fmt)
@@ -186,7 +217,7 @@ class Booker:
         """극장 선택 목록에는 'CGV' 접두사 없이 '용산아이파크몰'로만 나온다."""
         return re.sub(r"^\s*CGV\s*", "", self.cfg.theater.name).strip()
 
-    def _click_date(self, ymd: str) -> None:
+    def _click_date(self, ymd: str, timeout: float = 12.0) -> None:
         """날짜 탭을 누른다. 이미 선택돼 있으면 건너뛴다."""
         cfg = self.sel["date_tab"]
         day = str(int(ymd[6:8]))
@@ -202,15 +233,19 @@ class Booker:
         }
         return 'notfound';
         """
-        outcome = self.driver.execute_script(
-            js, cfg["button"], cfg["number"], cfg["active_marker"], day
+        outcome = self._js_retry(
+            js, (cfg["button"], cfg["number"], cfg["active_marker"], day),
+            ok={"already", "clicked"}, timeout=timeout, label="날짜 탭",
         )
         if outcome == "notfound":
-            raise BookingError(f"{ymd} 날짜 탭이 없습니다. 예매가 아직 열리지 않았을 수 있습니다.")
+            raise BookingError(
+                f"{ymd} 날짜 탭이 {timeout:.0f}초 안에 나타나지 않았습니다. "
+                "예매가 아직 열리지 않았거나 화면이 아직 뜨는 중일 수 있습니다."
+            )
         if outcome == "clicked":
             time.sleep(2.5)
 
-    def _click_matching_showtime(self, showtime) -> None:
+    def _click_matching_showtime(self, showtime, timeout: float = 12.0) -> None:
         """시작 시각과 상영관 이름이 모두 맞는 회차 버튼을 누른다."""
         js = """
         const want = arguments[0], screen = arguments[1], sel = arguments[2];
@@ -228,14 +263,18 @@ class Booker:
         return null;
         """
         spec = self.sel["showtime_button"][0]
-        hit = self.driver.execute_script(js, showtime.start, showtime.screen, spec)
+        hit = self._js_retry(
+            js, (showtime.start, showtime.screen, spec),
+            ok=None, timeout=timeout, label="회차 버튼",
+        )
         if not hit:
             raise SeatTakenError(
-                f"회차 버튼을 못 찾음 ({showtime.start} {showtime.screen}). 이미 닫혔을 수 있습니다."
+                f"회차 버튼이 {timeout:.0f}초 안에 안 보였습니다 "
+                f"({showtime.start} {showtime.screen}). 이미 닫혔거나 화면이 아직 뜨는 중일 수 있습니다."
             )
         time.sleep(3.0)
 
-    def select_visitor_count(self, count: int) -> None:
+    def select_visitor_count(self, count: int, timeout: float = 12.0) -> None:
         """'일반' 그룹에서 인원 수 버튼을 누르고 좌석 모달을 연다."""
         self._check_deadline("인원 선택")
         vc = self.sel["visitor_count"]
@@ -252,11 +291,14 @@ class Booker:
         }
         return 'nogroup';
         """
-        outcome = self.driver.execute_script(
-            js, vc["group"], vc["label"], vc["button"], str(count)
+        outcome = self._js_retry(
+            js, (vc["group"], vc["label"], vc["button"], str(count)),
+            ok={"ok"}, timeout=timeout, label="인원 버튼",
         )
         if outcome != "ok":
-            raise BookingError(f"관람인원 {count}명 버튼을 못 찾음 ({outcome})")
+            raise BookingError(
+                f"관람인원 {count}명 버튼이 {timeout:.0f}초 안에 안 보였습니다 ({outcome})"
+            )
         time.sleep(1.0)
 
         self._click(vc["open_seatmap"], timeout=10, wait=2.5)
