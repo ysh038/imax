@@ -11,6 +11,7 @@ import base64
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -228,30 +229,57 @@ class Booker:
         return re.sub(r"^\s*CGV\s*", "", self.cfg.theater.name).strip()
 
     def _click_date(self, ymd: str, timeout: float | None = None) -> None:
-        """날짜 탭을 누른다. 이미 선택돼 있으면 건너뛴다."""
+        """날짜 탭을 누른다. 이미 선택돼 있으면 건너뛴다.
+
+        날짜 탭 표기가 날마다, 달마다 다르다. 보통은 0으로 채운 두 자리
+        ('02'~'31')인데, 달의 1일은 'M.1'('9.1')로 특별 취급될 때가 있다. 그런데
+        이 특별 취급이 항상 나오는 것도 아니다 — 실측해 보니 9월 1일은 '9.1'인데
+        같은 목록 안의 10월 1일은 그냥 '01'이었다. 텍스트 표기 규칙을 다
+        알아낼 수 없다.
+
+        더 나쁜 건, 표기가 뭐가 됐든 텍스트만으로는 같은 목록 안에 겹치는 날짜
+        (9월 9일과 10월 9일이 둘 다 '09')를 구분할 수 없다는 것이다. 텍스트로
+        찾으면 앞쪽(더 이른 달)을 조용히 눌러 버린다. 에러도 안 난다.
+
+        그래서 텍스트를 아예 안 믿는다. 탭은 항상 '오늘'부터 순서대로 나열되니,
+        오늘로부터 며칠 뒤인지 '위치'로 찾는다. 텍스트는 그 위치가 진짜 원하는
+        날인지 마지막에 확인하는 용도로만 쓴다 — CGV가 목록 구성을 바꾸면
+        위치 계산이 틀어질 수 있는데, 그때 엉뚱한 날짜를 조용히 누르느니
+        실패하는 게 낫다.
+        """
         timeout = self.cfg.booking.render_timeout_sec if timeout is None else timeout
         cfg = self.sel["date_tab"]
-        day = str(int(ymd[6:8]))
+        target = datetime.strptime(ymd, "%Y%m%d").date()
+        offset = (target - datetime.now().date()).days
+        day_num = target.day
         js = """
-        const [btnSel, numSel, activeMark, day] = arguments;
-        for (const btn of document.querySelectorAll(btnSel)) {
-          const num = btn.querySelector(numSel);
-          if (!num || num.textContent.trim() !== day) continue;
-          if ((btn.className || '').includes(activeMark)) return 'already';
-          btn.scrollIntoView({block: 'nearest', inline: 'center'});
-          btn.click();
-          return 'clicked';
-        }
-        return 'notfound';
+        const [btnSel, numSel, activeMark, offset, dayNum] = arguments;
+        const btns = document.querySelectorAll(btnSel);
+        if (offset < 0 || offset >= btns.length) return 'outofrange';
+        const btn = btns[offset];
+        const num = btn.querySelector(numSel);
+        const text = num ? num.textContent.trim() : '';
+        const padded = String(dayNum).padStart(2, '0');
+        const ok = text === String(dayNum) || text === padded || text.endsWith('.' + dayNum);
+        if (!ok) return 'mismatch:' + text;
+        if ((btn.className || '').includes(activeMark)) return 'already';
+        btn.scrollIntoView({block: 'nearest', inline: 'center'});
+        btn.click();
+        return 'clicked';
         """
         outcome = self._js_retry(
-            js, (cfg["button"], cfg["number"], cfg["active_marker"], day),
+            js, (cfg["button"], cfg["number"], cfg["active_marker"], offset, day_num),
             ok={"already", "clicked"}, timeout=timeout, label="날짜 탭",
         )
-        if outcome == "notfound":
+        if outcome == "outofrange" or outcome == "notfound":
             raise BookingError(
                 f"{ymd} 날짜 탭이 {timeout:.0f}초 안에 나타나지 않았습니다. "
                 "예매가 아직 열리지 않았거나 화면이 아직 뜨는 중일 수 있습니다."
+            )
+        if outcome and outcome.startswith("mismatch"):
+            raise BookingError(
+                f"{ymd} 날짜 탭 위치 계산이 어긋났습니다 (그 자리 텍스트: {outcome.split(':', 1)[1]}). "
+                "CGV가 날짜 목록 구성을 바꿨을 수 있습니다. 셀렉터를 다시 확인해야 합니다."
             )
         if outcome == "clicked":
             time.sleep(2.5)
